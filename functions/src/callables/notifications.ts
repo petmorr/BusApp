@@ -3,167 +3,251 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { requireAdmin, requireAdminOrHelperFor } from '../utils/auth';
 import { sendNotificationToUsers } from '../utils/notifications';
 import { writeAuditLog } from '../utils/audit';
+import { validate, Schema } from '../utils/validation';
+import { callableDefaults } from '../utils/options';
+import { reportFailure } from '../utils/errors';
 
-interface SimpleEventInput {
+interface SimpleEventInput extends Record<string, unknown> {
   eventId: string;
   title?: string;
   body?: string;
+  idempotencyKey?: string;
 }
+
+const simpleEventSchema: Schema = {
+  eventId: { type: 'string', minLength: 1, maxLength: 200 },
+  title: { type: 'string', optional: true, maxLength: 200 },
+  body: { type: 'string', optional: true, maxLength: 1000 },
+  idempotencyKey: { type: 'string', optional: true, maxLength: 200 },
+};
 
 /**
  * Send the initial attendance request push to every user that represents at
  * least one active member (and whose own account is active).
  */
-export const sendAttendanceRequest = onCall<SimpleEventInput>(async (req) => {
-  const { uid } = requireAdmin(req);
-  const { eventId } = req.data ?? {};
-  if (!eventId) throw new HttpsError('invalid-argument', 'eventId is required.');
-
-  const targetUserIds = await targetActiveLinkedUsers();
-  const event = await loadEvent(eventId);
-
-  await sendNotificationToUsers({
-    eventId,
-    type: 'attendance_request',
-    title: req.data.title ?? 'Confirm bus attendance',
-    body:
-      req.data.body ??
-      `Please confirm seats for "${event.title}" before the cutoff.`,
-    targetUserIds,
-    sentByUserId: uid,
-    data: { eventId, screen: 'event_detail' },
-  });
-
-  await writeAuditLog({
-    actorUserId: uid,
-    action: 'send_attendance_request',
-    entityType: 'event',
-    entityPath: `events/${eventId}`,
-  });
-  return { ok: true, recipients: targetUserIds.length };
-});
+export const sendAttendanceRequest = onCall<SimpleEventInput>(
+  callableDefaults,
+  async (req) => {
+    const { uid } = requireAdmin(req);
+    const data = validate<SimpleEventInput>(req.data, simpleEventSchema);
+    try {
+      const targetUserIds = await targetActiveLinkedUsers();
+      const event = await loadEvent(data.eventId);
+      const idempotencyKey = data.idempotencyKey
+        ? `attendance-request:${data.eventId}:${data.idempotencyKey}`
+        : `attendance-request:${data.eventId}`;
+      await sendNotificationToUsers({
+        eventId: data.eventId,
+        type: 'attendance_request',
+        title: data.title ?? 'Confirm bus attendance',
+        body:
+          data.body ??
+          `Please confirm seats for "${event.title}" before the cutoff.`,
+        targetUserIds,
+        sentByUserId: uid,
+        data: { eventId: data.eventId, screen: 'event_detail' },
+        idempotencyKey,
+      });
+      await writeAuditLog({
+        actorUserId: uid,
+        action: 'send_attendance_request',
+        entityType: 'event',
+        entityPath: `events/${data.eventId}`,
+        after: { recipients: targetUserIds.length },
+      });
+      return { ok: true, recipients: targetUserIds.length };
+    } catch (err) {
+      await reportFailure(
+        {
+          actorUserId: uid,
+          action: 'send_attendance_request',
+          entityType: 'event',
+          entityPath: `events/${data.eventId}`,
+        },
+        err,
+      );
+      throw err;
+    }
+  },
+);
 
 /**
  * Send a reminder to users who have at least one linked active member without
  * a memberResponse for the given event.
  */
-export const sendAttendanceReminder = onCall<SimpleEventInput>(async (req) => {
-  const { uid } = requireAdmin(req);
-  const { eventId } = req.data ?? {};
-  if (!eventId) throw new HttpsError('invalid-argument', 'eventId is required.');
-
-  const allUsers = await targetActiveLinkedUsers();
-  const respondedMembers = await loadRespondedMemberIds(eventId);
-  const usersWithMissing: string[] = [];
-
-  for (const userId of allUsers) {
-    const linkedMembers = await loadActiveLinkedMemberIds(userId);
-    const missing = linkedMembers.filter((m) => !respondedMembers.has(m));
-    if (missing.length > 0) usersWithMissing.push(userId);
-  }
-
-  const event = await loadEvent(eventId);
-  await sendNotificationToUsers({
-    eventId,
-    type: 'attendance_reminder',
-    title: req.data.title ?? 'Bus attendance reminder',
-    body: req.data.body ?? `Please confirm seats for "${event.title}".`,
-    targetUserIds: usersWithMissing,
-    sentByUserId: uid,
-    data: { eventId, screen: 'event_detail' },
-  });
-
-  await writeAuditLog({
-    actorUserId: uid,
-    action: 'send_attendance_reminder',
-    entityType: 'event',
-    entityPath: `events/${eventId}`,
-    after: { recipients: usersWithMissing.length },
-  });
-  return { ok: true, recipients: usersWithMissing.length };
-});
+export const sendAttendanceReminder = onCall<SimpleEventInput>(
+  callableDefaults,
+  async (req) => {
+    const { uid } = requireAdmin(req);
+    const data = validate<SimpleEventInput>(req.data, simpleEventSchema);
+    try {
+      const allUsers = await targetActiveLinkedUsers();
+      const respondedMembers = await loadRespondedMemberIds(data.eventId);
+      const usersWithMissing: string[] = [];
+      for (const userId of allUsers) {
+        const linkedMembers = await loadActiveLinkedMemberIds(userId);
+        const missing = linkedMembers.filter((m) => !respondedMembers.has(m));
+        if (missing.length > 0) usersWithMissing.push(userId);
+      }
+      const event = await loadEvent(data.eventId);
+      const idempotencyKey = data.idempotencyKey
+        ? `attendance-reminder:${data.eventId}:${data.idempotencyKey}`
+        : undefined;
+      await sendNotificationToUsers({
+        eventId: data.eventId,
+        type: 'attendance_reminder',
+        title: data.title ?? 'Bus attendance reminder',
+        body: data.body ?? `Please confirm seats for "${event.title}".`,
+        targetUserIds: usersWithMissing,
+        sentByUserId: uid,
+        data: { eventId: data.eventId, screen: 'event_detail' },
+        idempotencyKey,
+      });
+      await writeAuditLog({
+        actorUserId: uid,
+        action: 'send_attendance_reminder',
+        entityType: 'event',
+        entityPath: `events/${data.eventId}`,
+        after: { recipients: usersWithMissing.length },
+      });
+      return { ok: true, recipients: usersWithMissing.length };
+    } catch (err) {
+      await reportFailure(
+        {
+          actorUserId: uid,
+          action: 'send_attendance_reminder',
+          entityType: 'event',
+          entityPath: `events/${data.eventId}`,
+        },
+        err,
+      );
+      throw err;
+    }
+  },
+);
 
 /**
  * Send a reminder to users who have one or more pending guest requests.
  */
-export const sendPendingGuestReminder = onCall<SimpleEventInput>(async (req) => {
-  const { uid } = requireAdmin(req);
-  const { eventId } = req.data ?? {};
-  if (!eventId) throw new HttpsError('invalid-argument', 'eventId is required.');
+export const sendPendingGuestReminder = onCall<SimpleEventInput>(
+  callableDefaults,
+  async (req) => {
+    const { uid } = requireAdmin(req);
+    const data = validate<SimpleEventInput>(req.data, simpleEventSchema);
+    try {
+      const snap = await admin
+        .firestore()
+        .collection('events')
+        .doc(data.eventId)
+        .collection('guestRequests')
+        .where('status', '==', 'pending')
+        .get();
+      const userIds = Array.from(
+        new Set(
+          snap.docs.map(
+            (d) => (d.data() as { requestedByUserId: string }).requestedByUserId,
+          ),
+        ),
+      );
+      const event = await loadEvent(data.eventId);
+      await sendNotificationToUsers({
+        eventId: data.eventId,
+        type: 'pending_guest_reminder',
+        title: data.title ?? 'Guest request awaiting decision',
+        body:
+          data.body ??
+          `You have pending guest requests for "${event.title}".`,
+        targetUserIds: userIds,
+        sentByUserId: uid,
+        data: { eventId: data.eventId, screen: 'event_detail' },
+        idempotencyKey: data.idempotencyKey
+          ? `pending-guest-reminder:${data.eventId}:${data.idempotencyKey}`
+          : undefined,
+      });
+      await writeAuditLog({
+        actorUserId: uid,
+        action: 'send_pending_guest_reminder',
+        entityType: 'event',
+        entityPath: `events/${data.eventId}`,
+        after: { recipients: userIds.length },
+      });
+      return { ok: true, recipients: userIds.length };
+    } catch (err) {
+      await reportFailure(
+        {
+          actorUserId: uid,
+          action: 'send_pending_guest_reminder',
+          entityType: 'event',
+          entityPath: `events/${data.eventId}`,
+        },
+        err,
+      );
+      throw err;
+    }
+  },
+);
 
-  const snap = await admin
-    .firestore()
-    .collection('events')
-    .doc(eventId)
-    .collection('guestRequests')
-    .where('status', '==', 'pending')
-    .get();
-  const userIds = Array.from(
-    new Set(snap.docs.map((d) => (d.data() as { requestedByUserId: string }).requestedByUserId)),
-  );
-
-  const event = await loadEvent(eventId);
-  await sendNotificationToUsers({
-    eventId,
-    type: 'pending_guest_reminder',
-    title: req.data.title ?? 'Guest request awaiting decision',
-    body:
-      req.data.body ??
-      `You have pending guest requests for "${event.title}".`,
-    targetUserIds: userIds,
-    sentByUserId: uid,
-    data: { eventId, screen: 'event_detail' },
-  });
-
-  await writeAuditLog({
-    actorUserId: uid,
-    action: 'send_pending_guest_reminder',
-    entityType: 'event',
-    entityPath: `events/${eventId}`,
-    after: { recipients: userIds.length },
-  });
-  return { ok: true, recipients: userIds.length };
-});
-
-interface OperationalInput {
+interface OperationalInput extends Record<string, unknown> {
   eventId: string;
   title: string;
   body: string;
+  idempotencyKey?: string;
 }
+
+const operationalSchema: Schema = {
+  eventId: { type: 'string', minLength: 1, maxLength: 200 },
+  title: { type: 'string', minLength: 1, maxLength: 200 },
+  body: { type: 'string', minLength: 1, maxLength: 1000 },
+  idempotencyKey: { type: 'string', optional: true, maxLength: 200 },
+};
 
 /**
  * Send an operational update (route change, parked-bus update, delay note) to
  * users who have at least one attending member response, plus admins and any
  * assigned helpers.
  */
-export const sendOperationalUpdate = onCall<OperationalInput>(async (req) => {
-  const { eventId, title, body } = req.data ?? ({} as OperationalInput);
-  if (!eventId || !title || !body) {
-    throw new HttpsError('invalid-argument', 'eventId, title and body are required.');
-  }
-  const isAssigned = await isUserAssignedHelperForEvent(req.auth?.uid, eventId);
-  const { uid, isAdmin } = requireAdminOrHelperFor(req, isAssigned);
-
-  const targetUserIds = await loadOperationalUpdateRecipients(eventId);
-  await sendNotificationToUsers({
-    eventId,
-    type: 'operational_update',
-    title,
-    body,
-    targetUserIds,
-    sentByUserId: uid,
-    data: { eventId, screen: 'event_detail' },
-  });
-
-  await writeAuditLog({
-    actorUserId: uid,
-    action: 'send_operational_update',
-    entityType: 'event',
-    entityPath: `events/${eventId}`,
-    after: { recipients: targetUserIds.length, isAdmin },
-  });
-  return { ok: true, recipients: targetUserIds.length };
-});
+export const sendOperationalUpdate = onCall<OperationalInput>(
+  callableDefaults,
+  async (req) => {
+    const data = validate<OperationalInput>(req.data, operationalSchema);
+    const isAssigned = await isUserAssignedHelperForEvent(req.auth?.uid, data.eventId);
+    const { uid, isAdmin } = requireAdminOrHelperFor(req, isAssigned);
+    try {
+      const targetUserIds = await loadOperationalUpdateRecipients(data.eventId);
+      await sendNotificationToUsers({
+        eventId: data.eventId,
+        type: 'operational_update',
+        title: data.title,
+        body: data.body,
+        targetUserIds,
+        sentByUserId: uid,
+        data: { eventId: data.eventId, screen: 'event_detail' },
+        idempotencyKey: data.idempotencyKey
+          ? `operational-update:${data.eventId}:${data.idempotencyKey}`
+          : undefined,
+      });
+      await writeAuditLog({
+        actorUserId: uid,
+        action: 'send_operational_update',
+        entityType: 'event',
+        entityPath: `events/${data.eventId}`,
+        after: { recipients: targetUserIds.length, isAdmin },
+      });
+      return { ok: true, recipients: targetUserIds.length };
+    } catch (err) {
+      await reportFailure(
+        {
+          actorUserId: uid,
+          action: 'send_operational_update',
+          entityType: 'event',
+          entityPath: `events/${data.eventId}`,
+        },
+        err,
+      );
+      throw err;
+    }
+  },
+);
 
 // ----- helpers -----
 
@@ -212,7 +296,6 @@ async function loadActiveLinkedMemberIds(userId: string): Promise<string[]> {
 async function loadOperationalUpdateRecipients(eventId: string): Promise<string[]> {
   const recipients = new Set<string>();
 
-  // Attending members → look up linked users.
   const responsesSnap = await admin
     .firestore()
     .collection('events')
@@ -222,10 +305,7 @@ async function loadOperationalUpdateRecipients(eventId: string): Promise<string[
     .get();
   for (const d of responsesSnap.docs) {
     const data = d.data() as { respondingUserId?: string; memberId: string };
-    if (data.respondingUserId) {
-      recipients.add(data.respondingUserId);
-    }
-    // Also include any other users linked to this member.
+    if (data.respondingUserId) recipients.add(data.respondingUserId);
     const linksSnap = await admin
       .firestore()
       .collection('memberUserLinks')
@@ -238,7 +318,6 @@ async function loadOperationalUpdateRecipients(eventId: string): Promise<string[
     });
   }
 
-  // Admins.
   const adminsSnap = await admin
     .firestore()
     .collection('users')
@@ -247,7 +326,6 @@ async function loadOperationalUpdateRecipients(eventId: string): Promise<string[
     .get();
   adminsSnap.forEach((d) => recipients.add(d.id));
 
-  // Assigned helpers.
   const helpersSnap = await admin
     .firestore()
     .collection('events')
