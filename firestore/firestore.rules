@@ -1,0 +1,130 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function hasRole(role) {
+      return isSignedIn() && role in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles;
+    }
+
+    function isAdmin() {
+      return hasRole('admin') || (isSignedIn() && request.auth.token.admin == true);
+    }
+
+    function isHelper() {
+      return hasRole('helper') || (isSignedIn() && request.auth.token.helper == true);
+    }
+
+    function isSelf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function eventDoc(eventId) {
+      return get(/databases/$(database)/documents/events/$(eventId));
+    }
+
+    function eventAllowsUserChanges(eventId) {
+      let event = eventDoc(eventId).data;
+      return !('cutoffAt' in event) || event.cutoffAt == null || request.time < event.cutoffAt;
+    }
+
+    function hasActiveMemberLink(memberId) {
+      return exists(/databases/$(database)/documents/memberUserLinks/$(request.auth.uid + '_' + memberId)) &&
+        get(/databases/$(database)/documents/memberUserLinks/$(request.auth.uid + '_' + memberId)).data.status == 'active';
+    }
+
+    function isAssignedHelper(eventId) {
+      return isSignedIn() &&
+        isHelper() &&
+        exists(/databases/$(database)/documents/events/$(eventId)/helpers/$(request.auth.uid));
+    }
+
+    function isOperationalEventPatch() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'parkedBusLocation',
+        'generalNotes',
+        'updatedAt'
+      ]);
+    }
+
+    match /users/{userId} {
+      allow read: if isSelf(userId) || isAdmin();
+      allow create: if isSelf(userId) && request.resource.data.roles == ['user'];
+      allow update: if isSelf(userId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'lastLoginAt', 'updatedAt']);
+      allow write: if isAdmin();
+
+      match /fcmTokens/{tokenId} {
+        allow read, write: if isSelf(userId) || isAdmin();
+      }
+    }
+
+    match /members/{memberId} {
+      allow read: if isAdmin() || hasActiveMemberLink(memberId);
+      allow write: if isAdmin();
+    }
+
+    match /memberUserLinks/{linkId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isAdmin() || (isSignedIn() && request.resource.data.userId == request.auth.uid && request.resource.data.status == 'pending');
+      allow update, delete: if isAdmin();
+    }
+
+    match /events/{eventId} {
+      allow read: if isSignedIn();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (isAssignedHelper(eventId) && isOperationalEventPatch());
+
+      match /stops/{stopId} {
+        allow read: if isSignedIn();
+        allow write: if isAdmin() || isAssignedHelper(eventId);
+      }
+
+      match /helpers/{userId} {
+        allow read: if isAdmin() || isSelf(userId) || isAssignedHelper(eventId);
+        allow write: if isAdmin();
+      }
+
+      match /memberResponses/{memberId} {
+        allow read: if isAdmin() || hasActiveMemberLink(memberId);
+        allow create, update: if isAdmin() ||
+          (hasActiveMemberLink(memberId) &&
+            eventAllowsUserChanges(eventId) &&
+            request.resource.data.memberId == memberId &&
+            request.resource.data.respondingUserId == request.auth.uid &&
+            request.resource.data.status in ['attending', 'not_attending']);
+        allow delete: if isAdmin();
+      }
+
+      match /guestRequests/{guestRequestId} {
+        allow read: if isAdmin() || (isSignedIn() && resource.data.requestedByUserId == request.auth.uid);
+        allow create: if isSignedIn() &&
+          eventAllowsUserChanges(eventId) &&
+          request.resource.data.requestedByUserId == request.auth.uid &&
+          request.resource.data.status == 'pending' &&
+          request.resource.data.guestName is string &&
+          request.resource.data.guestName.size() > 0;
+        allow update: if isAdmin() ||
+          (isSignedIn() &&
+            resource.data.requestedByUserId == request.auth.uid &&
+            eventAllowsUserChanges(eventId) &&
+            resource.data.status == 'pending' &&
+            request.resource.data.status in ['pending', 'cancelled']);
+        allow delete: if isAdmin();
+      }
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid in resource.data.targetUserIds);
+      allow write: if false;
+    }
+
+    match /auditLogs/{auditLogId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "projects": {
+    "default": "supporters-bus-dev",
+    "production": "supporters-bus-prod"
+  }
+}
