@@ -51,6 +51,10 @@ app/android/app/upload-keystore.jks
 *.env
 .env.*
 !.env.example
+# E2E emulator-only env file is committed: it only contains a non-secret
+# BYPASS_APP_CHECK flag used to allow Cloud Functions to accept emulator
+# calls. Production deploys NEVER set this.
+!functions/.env.supporters-bus-e2e
 
 # Coverage
 coverage/

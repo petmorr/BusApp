@@ -1,0 +1,46 @@
+version: 2
+
+# Dependency vulnerability automation. Dependabot opens PRs for security
+# patches across the npm ecosystems used by this repo plus the GitHub
+# Actions workflow itself. The CI job `functions-audit` additionally fails
+# the build on HIGH / CRITICAL findings in production dependencies, so a
+# missed Dependabot PR cannot reach `main` while a known vulnerability is
+# unfixed.
+
+updates:
+  - package-ecosystem: npm
+    directory: /functions
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      firebase:
+        patterns:
+          - 'firebase-*'
+      types:
+        patterns:
+          - '@types/*'
+
+  - package-ecosystem: npm
+    directory: /scripts
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: npm
+    directory: /firestore/tests
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: npm
+    directory: /e2e
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3

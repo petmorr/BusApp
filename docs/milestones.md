@@ -14,21 +14,49 @@ full deliverables/acceptance criteria).
 | 7 | Capacity, Reminders, and Notifications | Done (backend) — capacity helper, Firestore triggers, capacity alerts, attendance / pending-guest reminder callables, FCM fan-out with idempotency keys. Client UIs to invoke them TODO |
 | 8 | Helper Operations and Parked-Bus Location | Partial — `updateParkedBusLocation`, helper assign/unassign, operational update callables (App Check enforced, schema validated, idempotent). Helper UI screens TODO |
 | 9 | Admin Attendance Board and History | Partial — required indexes + denormalised history fields on `memberResponses`. Admin board + history screens TODO |
-| 10 | Security, Testing, and Release | Mostly done — Firestore rules with role-based access + canonical link-id enforcement, 47 Firestore-rule integration tests on the emulator, 21 backend unit tests, App Check enforcement, centralised payload validation, structured failure handling, SLOs + runbooks, GitHub Actions CI running all of the above. App Check / Crashlytics enablement, device matrix testing, and store release pipelines tracked in `docs/production-readiness.md` |
+| 10 | Security, Testing, and Release | Done (testing layer) — Firestore rules with role-based access + canonical link-id enforcement, 47 Firestore-rule integration tests, 30 backend unit tests, 14 end-to-end tests across the full Firebase emulator stack, App Check enforcement, centralised payload validation, structured failure handling, PII redaction in audit log, SLOs + runbooks, Dependabot + `npm audit` gate, GitHub Actions CI running five jobs. Stage / prod project provisioning + signing secrets tracked in `docs/release.md` and `docs/production-readiness.md` |
 
 ## Test inventory
 
-- `functions/test/capacity.test.ts` — 5 tests (capacity calculation thresholds).
-- `functions/test/links.test.ts` — 6 tests (`memberUserLinks` id format invariants).
-- `functions/test/validation.test.ts` — 10 tests (callable payload validator: required / unknown / type / length / range / enum).
-- `firestore/tests/memberResponses.test.ts` — 7 tests (linked vs unlinked, spoofed responder, override flag, admin path).
-- `firestore/tests/guestRequests.test.ts` — 8 tests (pending creation, status enforcement, edits, no self-approval, no third-party edits).
-- `firestore/tests/helpers_assignment.test.ts` — 6 tests (assigned helper paths, unassigned helper rejections, stop deletion admin-only).
-- `firestore/tests/admin.test.ts` — 15 tests (member directory privacy, canonical link-id, audit / notification write protection, event admin-only).
-- `firestore/tests/denyPaths.test.ts` — 11 tests (P0 deny-path coverage matrix: unlinked response, unauthorized guest decision, helper non-allowed fields, non-admin admin collections).
-- `app/test/widget_test.dart` — 1 test (theme builds without errors).
+Backend unit tests (`functions/test/`):
 
-**Totals: 21 backend unit tests + 47 Firestore-rule integration tests + 1 Flutter widget test.**
+- `capacity.test.ts` — 5 tests (capacity calculation thresholds).
+- `links.test.ts` — 6 tests (`memberUserLinks` id format invariants).
+- `validation.test.ts` — 10 tests (callable payload validator).
+- `redaction.test.ts` — 9 tests (PII redaction policy).
+
+Firestore-rule integration tests (`firestore/tests/`, run against the
+Firestore emulator):
+
+- `memberResponses.test.ts` — 7 tests.
+- `guestRequests.test.ts` — 8 tests.
+- `helpers_assignment.test.ts` — 6 tests.
+- `admin.test.ts` — 15 tests.
+- `denyPaths.test.ts` — 11 tests (P0 deny-path coverage matrix).
+
+End-to-end tests (`e2e/`, run against the full Auth + Firestore +
+Functions emulator stack):
+
+- `login_and_profile.test.ts` — 2 tests (signup + admin link approval +
+  privacy gating; non-canonical link-id rejection).
+- `response_submission.test.ts` — 3 tests (linked write triggers
+  capacity recalc; unlinked write denied; cannot respond for unrelated
+  member).
+- `guest_decision.test.ts` — 5 tests (admin approval → audit (PII
+  redacted) + notification recorded; idempotent replay; non-admin
+  rejected; conflicting decisions; unknown payload field rejected).
+- `helper_operational_update.test.ts` — 4 tests (assigned helper pin
+  + lat/lng redaction in audit; unassigned helper denied; admin send
+  operational update; out-of-range latitude rejected by validator).
+
+Flutter app (`app/test/`):
+
+- `widget_test.dart` — 1 test (theme builds without errors).
+- `accessibility_test.dart` — 3 tests (Material tap target, labelled
+  tap targets + contrast, textScaler floor).
+
+**Totals: 30 backend unit tests + 47 Firestore-rule integration tests +
+14 end-to-end tests + 4 Flutter widget tests = 95 tests.**
 
 ## Production readiness
 
