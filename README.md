@@ -46,21 +46,13 @@ Quick start:
 
 ## Status
 
-Milestone-level completion checklist (full breakdown in
-[`docs/milestones.md`](docs/milestones.md)):
+This is an initial scaffold. Each milestone in `docs/spec.md` builds on this
+foundation:
 
-| # | Milestone | Status |
-|---|-----------|--------|
-| 1 | Product Finalisation and Setup | **Done** — repo layout, Firebase config, CI, docs, spec PDF + summary, setup + runbook + privacy docs |
-| 2 | Authentication and User Foundation | **Partial** — phone-OTP login screen, auth-aware router, role providers, FCM token registration in `NotificationsService` |
-| 3 | Member and Representation Management | **Partial** — full data model + CSV import script; admin UI for member list / link approvals still TODO |
-| 4 | Event and Route Management | **Partial** — data model + Firestore rules + repositories + capacity recalculation; admin event/route editor UI TODO |
-| 5 | Member Attendance Flow | **Partial** — data model + repository write path + cutoff field; full attendance UI TODO |
-| 6 | Guest Requests and Admin Approval | **Partial** — Cloud Function callables (`approveGuestRequest`, `rejectGuestRequest`) + repository wiring; admin UI TODO |
-| 7 | Capacity, Reminders, and Notifications | **Done (backend)** — capacity helper, Firestore triggers, capacity alerts, attendance/pending-guest reminder callables, FCM fan-out; client UIs to invoke them TODO |
-| 8 | Helper Operations and Parked-Bus Location | **Partial** — `updateParkedBusLocation`, `assignEventHelper`/`unassignEventHelper`, `sendOperationalUpdate` callables; helper UI screens TODO |
-| 9 | Admin Attendance Board and History | **Partial** — required indexes + denormalised history fields on `memberResponses`; admin board + history screens TODO |
-| 10 | Security, Testing, and Release | **Partial** — Firestore rules with role-based access + canonical link-id enforcement, **36** Firestore-rule integration tests on the emulator, **5** capacity unit tests, **6** memberUserLinks invariant unit tests, GitHub Actions CI running all of the above. App Check, Crashlytics enablement, manual device testing, and store release checklists still TODO |
+- Project skeleton, security rules, indexes, capacity logic, and notification
+  callables are scaffolded.
+- Flutter feature folders contain placeholder screens and shared models that
+  match the Firestore schema.
+- A CSV-driven member import script is provided under `scripts/`.
 
-Privacy posture for member directory visibility is documented in
-[`docs/privacy.md`](docs/privacy.md).
+See [`docs/milestones.md`](docs/milestones.md) for the milestone breakdown.

@@ -2,7 +2,6 @@ import * as admin from 'firebase-admin';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { requireAdmin } from '../utils/auth';
 import { writeAuditLog } from '../utils/audit';
-import { isCanonicalLinkId } from '../utils/links';
 
 interface SetUserRoleInput {
   userId: string;
@@ -71,15 +70,8 @@ export const approveMemberUserLink = onCall<MemberLinkDecisionInput>(async (req)
   const ref = admin.firestore().collection('memberUserLinks').doc(linkId);
   const snap = await ref.get();
   if (!snap.exists) throw new HttpsError('not-found', 'Link not found.');
-  const data = snap.data() as { status: string; userId: string; memberId: string };
-  if (data.status !== 'pending') {
+  if (snap.data()?.status !== 'pending') {
     throw new HttpsError('failed-precondition', 'Link is not pending.');
-  }
-  if (!isCanonicalLinkId(linkId, data.userId, data.memberId)) {
-    throw new HttpsError(
-      'failed-precondition',
-      'Link id does not match the canonical `${userId}_${memberId}` format.',
-    );
   }
 
   await ref.update({
