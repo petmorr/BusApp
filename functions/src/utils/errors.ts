@@ -1,6 +1,7 @@
 import { logger } from 'firebase-functions/v2';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { writeAuditLog } from './audit';
+import { redactForAudit } from './redaction';
 
 /**
  * Shared classification of errors thrown by callables / triggers, so we have
@@ -100,6 +101,7 @@ export async function reportFailure(
   err: unknown,
 ): Promise<ClassifiedError> {
   const c = classify(err);
+  const redactedExtra = ctx.extra ? redactForAudit(ctx.extra) : undefined;
   logger.error('callable/trigger failed', {
     action: ctx.action,
     entityPath: ctx.entityPath,
@@ -108,7 +110,7 @@ export async function reportFailure(
     retryable: c.retryable,
     message: c.message,
     actorUserId: ctx.actorUserId,
-    ...ctx.extra,
+    ...(redactedExtra ?? {}),
   });
   await writeAuditLog({
     actorUserId: ctx.actorUserId,
@@ -119,7 +121,7 @@ export async function reportFailure(
       classification: c.classification,
       code: c.httpsCode,
       message: c.message,
-      ...ctx.extra,
+      ...(redactedExtra ?? {}),
     },
   }).catch((auditErr) => {
     // Never let audit-log failure mask the original error.

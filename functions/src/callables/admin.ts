@@ -1,4 +1,3 @@
-import * as admin from 'firebase-admin';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { requireAdmin } from '../utils/auth';
 import { writeAuditLog } from '../utils/audit';
@@ -6,6 +5,7 @@ import { isCanonicalLinkId } from '../utils/links';
 import { validate, Schema } from '../utils/validation';
 import { callableDefaults } from '../utils/options';
 import { reportFailure } from '../utils/errors';
+import { authAdmin, db, serverTimestamp } from '../utils/firestore';
 
 interface SetUserRoleInput extends Record<string, unknown> {
   userId: string;
@@ -30,15 +30,15 @@ export const setUserRole = onCall<SetUserRoleInput>(
     const { uid } = requireAdmin(req);
     const data = validate<SetUserRoleInput>(req.data, setUserRoleSchema);
     try {
-      const auth = admin.auth();
+      const auth = authAdmin();
       const userRecord = await auth.getUser(data.userId);
       const claims = { ...(userRecord.customClaims ?? {}) } as Record<string, boolean>;
       claims[data.role] = data.granted;
       if (!data.granted) delete claims[data.role];
       await auth.setCustomUserClaims(data.userId, claims);
 
-      const userRef = admin.firestore().collection('users').doc(data.userId);
-      await admin.firestore().runTransaction(async (tx) => {
+      const userRef = db().collection('users').doc(data.userId);
+      await db().runTransaction(async (tx) => {
         const snap = await tx.get(userRef);
         if (!snap.exists) {
           throw new HttpsError('not-found', 'User profile not found.');
@@ -50,7 +50,7 @@ export const setUserRole = onCall<SetUserRoleInput>(
         next.add('user');
         tx.update(userRef, {
           roles: Array.from(next),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: serverTimestamp(),
         });
       });
 
@@ -92,10 +92,10 @@ export const approveMemberUserLink = onCall<MemberLinkDecisionInput>(
     const { uid } = requireAdmin(req);
     const data = validate<MemberLinkDecisionInput>(req.data, memberLinkDecisionSchema);
     try {
-      const ref = admin.firestore().collection('memberUserLinks').doc(data.linkId);
+      const ref = db().collection('memberUserLinks').doc(data.linkId);
       // Transaction so two admins cannot both flip a pending link to active
       // and overwrite each other's approver id.
-      await admin.firestore().runTransaction(async (tx) => {
+      await db().runTransaction(async (tx) => {
         const snap = await tx.get(ref);
         if (!snap.exists) throw new HttpsError('not-found', 'Link not found.');
         const linkData = snap.data() as {
@@ -115,8 +115,8 @@ export const approveMemberUserLink = onCall<MemberLinkDecisionInput>(
         tx.update(ref, {
           status: 'active',
           approvedByAdminId: uid,
-          approvedAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          approvedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
         });
       });
       await writeAuditLog({
@@ -147,15 +147,15 @@ export const rejectMemberUserLink = onCall<MemberLinkDecisionInput>(
     const { uid } = requireAdmin(req);
     const data = validate<MemberLinkDecisionInput>(req.data, memberLinkDecisionSchema);
     try {
-      const ref = admin.firestore().collection('memberUserLinks').doc(data.linkId);
-      await admin.firestore().runTransaction(async (tx) => {
+      const ref = db().collection('memberUserLinks').doc(data.linkId);
+      await db().runTransaction(async (tx) => {
         const snap = await tx.get(ref);
         if (!snap.exists) throw new HttpsError('not-found', 'Link not found.');
         tx.update(ref, {
           status: 'rejected',
           approvedByAdminId: uid,
-          approvedAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          approvedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
         });
       });
       await writeAuditLog({

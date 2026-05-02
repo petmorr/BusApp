@@ -1,5 +1,5 @@
-import * as admin from 'firebase-admin';
 import { logger } from 'firebase-functions/v2';
+import { db, timestampNow, Timestamp } from './firestore';
 
 /**
  * Lightweight idempotency guard backed by Firestore.
@@ -29,8 +29,8 @@ export interface IdempotencyRecord<T> {
   status: 'in_progress' | 'completed' | 'failed';
   result?: T;
   error?: { code: string; message: string };
-  createdAt: FirebaseFirestore.Timestamp;
-  completedAt: FirebaseFirestore.Timestamp | null;
+  createdAt: Timestamp;
+  completedAt: Timestamp | null;
 }
 
 export async function withIdempotency<T>(
@@ -39,11 +39,11 @@ export async function withIdempotency<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   if (!key) throw new Error('withIdempotency requires a non-empty key.');
-  const db = admin.firestore();
-  const ref = db.collection('idempotencyKeys').doc(encodeKey(key));
-  const now = admin.firestore.Timestamp.now();
+  const firestore = db();
+  const ref = firestore.collection('idempotencyKeys').doc(encodeKey(key));
+  const now = timestampNow();
 
-  const reservation = await db.runTransaction(async (tx) => {
+  const reservation = await firestore.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (snap.exists) {
       const data = snap.data() as IdempotencyRecord<T>;
@@ -92,7 +92,7 @@ export async function withIdempotency<T>(
       {
         status: 'completed',
         result: result ?? null,
-        completedAt: admin.firestore.Timestamp.now(),
+        completedAt: timestampNow(),
       },
       { merge: true },
     );
@@ -104,7 +104,7 @@ export async function withIdempotency<T>(
       {
         status: 'failed',
         error: { code, message },
-        completedAt: admin.firestore.Timestamp.now(),
+        completedAt: timestampNow(),
       },
       { merge: true },
     );

@@ -1,6 +1,6 @@
-import * as admin from 'firebase-admin';
 import { logger } from 'firebase-functions/v2';
 import { NotificationType } from '../types/domain';
+import { db, messaging, serverTimestamp } from './firestore';
 
 interface SendArgs {
   eventId: string | null;
@@ -42,14 +42,13 @@ interface SendArgs {
  *   the runbook (`docs/runbooks/notifications.md`).
  */
 export async function sendNotificationToUsers(args: SendArgs): Promise<string> {
-  const db = admin.firestore();
-  const messaging = admin.messaging();
+  const firestore = db();
 
   const targetUserIds = uniq(args.targetUserIds);
   const notifId = args.idempotencyKey
     ? encodeId(args.idempotencyKey)
-    : db.collection('notifications').doc().id;
-  const notificationRef = db.collection('notifications').doc(notifId);
+    : firestore.collection('notifications').doc().id;
+  const notificationRef = firestore.collection('notifications').doc(notifId);
 
   if (args.idempotencyKey) {
     const existing = await notificationRef.get();
@@ -72,14 +71,14 @@ export async function sendNotificationToUsers(args: SendArgs): Promise<string> {
     status: 'queued' as const,
     data: args.data ?? {},
     idempotencyKey: args.idempotencyKey ?? null,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: serverTimestamp(),
     sentAt: null,
   });
 
   if (targetUserIds.length === 0) {
     await notificationRef.update({
       status: 'sent',
-      sentAt: admin.firestore.FieldValue.serverTimestamp(),
+      sentAt: serverTimestamp(),
     });
     return notifId;
   }
@@ -92,19 +91,35 @@ export async function sendNotificationToUsers(args: SendArgs): Promise<string> {
     });
     await notificationRef.update({
       status: 'sent',
-      sentAt: admin.firestore.FieldValue.serverTimestamp(),
+      sentAt: serverTimestamp(),
     });
     return notifId;
   }
 
   let failureCount = 0;
-  for (const batch of chunk(tokens, 500)) {
-    const response = await messaging.sendEachForMulticast({
-      tokens: batch,
-      notification: { title: args.title, body: args.body },
-      data: { ...(args.data ?? {}), type: args.type },
+  try {
+    for (const batch of chunk(tokens, 500)) {
+      const response = await messaging().sendEachForMulticast({
+        tokens: batch,
+        notification: { title: args.title, body: args.body },
+        data: { ...(args.data ?? {}), type: args.type },
+      });
+      failureCount += response.failureCount;
+    }
+  } catch (err) {
+    // The emulator does not support FCM; treat the entire batch as failed
+    // and persist the status so audit/runbook investigation can pick it up.
+    logger.warn('sendNotificationToUsers: FCM dispatch threw', {
+      notificationId: notifId,
+      message: (err as Error)?.message,
     });
-    failureCount += response.failureCount;
+    await notificationRef.update({
+      status: 'failed',
+      failureCount: tokens.length,
+      tokenCount: tokens.length,
+      sentAt: serverTimestamp(),
+    });
+    return notifId;
   }
 
   const status =
@@ -117,16 +132,16 @@ export async function sendNotificationToUsers(args: SendArgs): Promise<string> {
     status,
     failureCount,
     tokenCount: tokens.length,
-    sentAt: admin.firestore.FieldValue.serverTimestamp(),
+    sentAt: serverTimestamp(),
   });
   return notifId;
 }
 
 async function loadFcmTokens(userIds: string[]): Promise<string[]> {
-  const db = admin.firestore();
+  const firestore = db();
   const tokens: string[] = [];
   for (const userId of userIds) {
-    const snap = await db
+    const snap = await firestore
       .collection('users')
       .doc(userId)
       .collection('fcmTokens')

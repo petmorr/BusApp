@@ -1,4 +1,3 @@
-import * as admin from 'firebase-admin';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { requireAdmin } from '../utils/auth';
 import { sendNotificationToUsers } from '../utils/notifications';
@@ -7,6 +6,7 @@ import { validate } from '../utils/validation';
 import { callableDefaults } from '../utils/options';
 import { withIdempotency } from '../utils/idempotency';
 import { reportFailure } from '../utils/errors';
+import { db, serverTimestamp } from '../utils/firestore';
 
 interface DecisionInput extends Record<string, unknown> {
   eventId: string;
@@ -30,8 +30,8 @@ async function setGuestStatus(
   input: DecisionInput,
   status: 'approved' | 'rejected',
 ): Promise<{ ok: true; status: 'approved' | 'rejected' }> {
-  const db = admin.firestore();
-  const ref = db
+  const firestore = db();
+  const ref = firestore
     .collection('events')
     .doc(input.eventId)
     .collection('guestRequests')
@@ -44,7 +44,7 @@ async function setGuestStatus(
   // This closes the race where two admins could both press Approve at the
   // same moment, otherwise the second write would silently overwrite the
   // first decision (and any audit-log split-brain that follows).
-  const before = await db.runTransaction(async (tx) => {
+  const before = await firestore.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) {
       throw new HttpsError('not-found', 'Guest request not found.');
@@ -59,8 +59,8 @@ async function setGuestStatus(
     tx.update(ref, {
       status,
       decisionByAdminId: uid,
-      decisionAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      decisionAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
     return data;
   });

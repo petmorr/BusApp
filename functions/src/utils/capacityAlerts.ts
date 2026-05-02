@@ -1,6 +1,6 @@
-import * as admin from 'firebase-admin';
 import { CapacityStatus } from '../types/domain';
 import { sendNotificationToUsers } from './notifications';
+import { db, serverTimestamp } from './firestore';
 
 interface AlertChangeArgs {
   eventId: string;
@@ -48,16 +48,15 @@ export async function sendCapacityAlertIfChanged(
     data: { eventId: args.eventId, screen: 'event_detail' },
   });
 
-  await admin.firestore().collection('events').doc(args.eventId).update({
-    lastCapacityAlertSentAt: admin.firestore.FieldValue.serverTimestamp(),
+  await db().collection('events').doc(args.eventId).update({
+    lastCapacityAlertSentAt: serverTimestamp(),
   });
 }
 
 async function fetchAdminUserIds(): Promise<string[]> {
   // Admins are tracked via custom claims, but we mirror a flag on the user doc
   // (`roles` array) so we can query for them without paging Auth users.
-  const snap = await admin
-    .firestore()
+  const snap = await db()
     .collection('users')
     .where('roles', 'array-contains', 'admin')
     .where('isActive', '==', true)

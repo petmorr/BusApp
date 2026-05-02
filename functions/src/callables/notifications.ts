@@ -1,4 +1,3 @@
-import * as admin from 'firebase-admin';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { requireAdmin, requireAdminOrHelperFor } from '../utils/auth';
 import { sendNotificationToUsers } from '../utils/notifications';
@@ -6,6 +5,7 @@ import { writeAuditLog } from '../utils/audit';
 import { validate, Schema } from '../utils/validation';
 import { callableDefaults } from '../utils/options';
 import { reportFailure } from '../utils/errors';
+import { db } from '../utils/firestore';
 
 interface SimpleEventInput extends Record<string, unknown> {
   eventId: string;
@@ -135,8 +135,7 @@ export const sendPendingGuestReminder = onCall<SimpleEventInput>(
     const { uid } = requireAdmin(req);
     const data = validate<SimpleEventInput>(req.data, simpleEventSchema);
     try {
-      const snap = await admin
-        .firestore()
+      const snap = await db()
         .collection('events')
         .doc(data.eventId)
         .collection('guestRequests')
@@ -252,14 +251,13 @@ export const sendOperationalUpdate = onCall<OperationalInput>(
 // ----- helpers -----
 
 async function loadEvent(eventId: string): Promise<{ title: string }> {
-  const snap = await admin.firestore().collection('events').doc(eventId).get();
+  const snap = await db().collection('events').doc(eventId).get();
   if (!snap.exists) throw new HttpsError('not-found', 'Event not found.');
   return snap.data() as { title: string };
 }
 
 async function targetActiveLinkedUsers(): Promise<string[]> {
-  const snap = await admin
-    .firestore()
+  const snap = await db()
     .collection('memberUserLinks')
     .where('status', '==', 'active')
     .get();
@@ -272,8 +270,7 @@ async function targetActiveLinkedUsers(): Promise<string[]> {
 }
 
 async function loadRespondedMemberIds(eventId: string): Promise<Set<string>> {
-  const snap = await admin
-    .firestore()
+  const snap = await db()
     .collection('events')
     .doc(eventId)
     .collection('memberResponses')
@@ -284,8 +281,7 @@ async function loadRespondedMemberIds(eventId: string): Promise<Set<string>> {
 }
 
 async function loadActiveLinkedMemberIds(userId: string): Promise<string[]> {
-  const snap = await admin
-    .firestore()
+  const snap = await db()
     .collection('memberUserLinks')
     .where('userId', '==', userId)
     .where('status', '==', 'active')
@@ -296,8 +292,7 @@ async function loadActiveLinkedMemberIds(userId: string): Promise<string[]> {
 async function loadOperationalUpdateRecipients(eventId: string): Promise<string[]> {
   const recipients = new Set<string>();
 
-  const responsesSnap = await admin
-    .firestore()
+  const responsesSnap = await db()
     .collection('events')
     .doc(eventId)
     .collection('memberResponses')
@@ -306,8 +301,7 @@ async function loadOperationalUpdateRecipients(eventId: string): Promise<string[
   for (const d of responsesSnap.docs) {
     const data = d.data() as { respondingUserId?: string; memberId: string };
     if (data.respondingUserId) recipients.add(data.respondingUserId);
-    const linksSnap = await admin
-      .firestore()
+    const linksSnap = await db()
       .collection('memberUserLinks')
       .where('memberId', '==', data.memberId)
       .where('status', '==', 'active')
@@ -318,16 +312,14 @@ async function loadOperationalUpdateRecipients(eventId: string): Promise<string[
     });
   }
 
-  const adminsSnap = await admin
-    .firestore()
+  const adminsSnap = await db()
     .collection('users')
     .where('roles', 'array-contains', 'admin')
     .where('isActive', '==', true)
     .get();
   adminsSnap.forEach((d) => recipients.add(d.id));
 
-  const helpersSnap = await admin
-    .firestore()
+  const helpersSnap = await db()
     .collection('events')
     .doc(eventId)
     .collection('helpers')
@@ -342,8 +334,7 @@ async function isUserAssignedHelperForEvent(
   eventId: string,
 ): Promise<boolean> {
   if (!uid) return false;
-  const snap = await admin
-    .firestore()
+  const snap = await db()
     .collection('events')
     .doc(eventId)
     .collection('helpers')

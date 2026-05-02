@@ -1,4 +1,3 @@
-import * as admin from 'firebase-admin';
 import { onCall } from 'firebase-functions/v2/https';
 import { requireAdminOrHelperFor } from '../utils/auth';
 import { writeAuditLog } from '../utils/audit';
@@ -6,6 +5,7 @@ import { sendNotificationToUsers } from '../utils/notifications';
 import { validate, Schema } from '../utils/validation';
 import { callableDefaults } from '../utils/options';
 import { reportFailure } from '../utils/errors';
+import { db, serverTimestamp } from '../utils/firestore';
 
 interface UpdateLocationInput extends Record<string, unknown> {
   eventId: string;
@@ -34,7 +34,7 @@ export const updateParkedBusLocation = onCall<UpdateLocationInput>(
     const isAssigned = await isUserAssignedHelperForEvent(req.auth?.uid, data.eventId);
     const { uid } = requireAdminOrHelperFor(req, isAssigned);
     try {
-      const eventRef = admin.firestore().collection('events').doc(data.eventId);
+      const eventRef = db().collection('events').doc(data.eventId);
       const before = (await eventRef.get()).data();
       await eventRef.update({
         parkedBusLocation: {
@@ -43,9 +43,9 @@ export const updateParkedBusLocation = onCall<UpdateLocationInput>(
           label: data.label ?? '',
           notes: data.notes ?? '',
           updatedByUserId: uid,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: serverTimestamp(),
         },
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
       await writeAuditLog({
         actorUserId: uid,
@@ -93,8 +93,7 @@ async function isUserAssignedHelperForEvent(
   eventId: string,
 ): Promise<boolean> {
   if (!uid) return false;
-  const snap = await admin
-    .firestore()
+  const snap = await db()
     .collection('events')
     .doc(eventId)
     .collection('helpers')
@@ -104,8 +103,7 @@ async function isUserAssignedHelperForEvent(
 }
 
 async function loadAttendingUserIds(eventId: string): Promise<string[]> {
-  const snap = await admin
-    .firestore()
+  const snap = await db()
     .collection('events')
     .doc(eventId)
     .collection('memberResponses')
@@ -115,8 +113,7 @@ async function loadAttendingUserIds(eventId: string): Promise<string[]> {
   for (const d of snap.docs) {
     const data = d.data() as { respondingUserId?: string; memberId: string };
     if (data.respondingUserId) userIds.add(data.respondingUserId);
-    const linksSnap = await admin
-      .firestore()
+    const linksSnap = await db()
       .collection('memberUserLinks')
       .where('memberId', '==', data.memberId)
       .where('status', '==', 'active')

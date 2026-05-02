@@ -1,7 +1,7 @@
-import * as admin from 'firebase-admin';
 import { logger } from 'firebase-functions/v2';
 import { calculateCapacity } from './capacity';
 import { sendCapacityAlertIfChanged } from './capacityAlerts';
+import { db, serverTimestamp } from './firestore';
 
 /**
  * Recalculate capacity totals for an event and persist them on the event
@@ -9,8 +9,7 @@ import { sendCapacityAlertIfChanged } from './capacityAlerts';
  * whenever the event's capacityMax changes.
  */
 export async function recalculateEventCapacity(eventId: string): Promise<void> {
-  const db = admin.firestore();
-  const eventRef = db.collection('events').doc(eventId);
+  const eventRef = db().collection('events').doc(eventId);
   const eventSnap = await eventRef.get();
   if (!eventSnap.exists) {
     logger.warn('recalculateEventCapacity: event not found', { eventId });
@@ -57,8 +56,8 @@ export async function recalculateEventCapacity(eventId: string): Promise<void> {
     capacityPotentialTotal: result.potentialSeats,
     capacityStatus: result.capacityStatus,
     pendingGuestRisk: result.pendingGuestRisk,
-    capacityLastCalculatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    capacityLastCalculatedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
 
   await sendCapacityAlertIfChanged({
