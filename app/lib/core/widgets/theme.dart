@@ -12,9 +12,6 @@ ThemeData buildAppTheme() {
   );
   return base.copyWith(
     visualDensity: VisualDensity.comfortable,
-    textTheme: base.textTheme.apply(
-      fontSizeFactor: 1.1,
-    ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         minimumSize: const Size.fromHeight(56),

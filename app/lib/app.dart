@@ -15,6 +15,17 @@ class SupportersBusApp extends ConsumerWidget {
       theme: buildAppTheme(),
       routerConfig: router,
       debugShowCheckedModeBanner: false,
+      builder: (context, child) {
+        // Slightly enlarge text app-wide for older / less technical users
+        // (per the spec's non-functional requirements). Capped to avoid
+        // breaking layouts when the OS already scales text up.
+        final mq = MediaQuery.of(context);
+        final scaler = mq.textScaler.clamp(minScaleFactor: 1.1);
+        return MediaQuery(
+          data: mq.copyWith(textScaler: scaler),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
   }
 }
