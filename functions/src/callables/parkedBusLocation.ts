@@ -1,64 +1,92 @@
 import * as admin from 'firebase-admin';
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onCall } from 'firebase-functions/v2/https';
 import { requireAdminOrHelperFor } from '../utils/auth';
 import { writeAuditLog } from '../utils/audit';
 import { sendNotificationToUsers } from '../utils/notifications';
+import { validate, Schema } from '../utils/validation';
+import { callableDefaults } from '../utils/options';
+import { reportFailure } from '../utils/errors';
 
-interface UpdateLocationInput {
+interface UpdateLocationInput extends Record<string, unknown> {
   eventId: string;
   lat: number;
   lng: number;
   label?: string;
   notes?: string;
   notifyAttending?: boolean;
+  idempotencyKey?: string;
 }
 
-export const updateParkedBusLocation = onCall<UpdateLocationInput>(async (req) => {
-  const data = req.data ?? ({} as UpdateLocationInput);
-  if (!data.eventId || typeof data.lat !== 'number' || typeof data.lng !== 'number') {
-    throw new HttpsError('invalid-argument', 'eventId, lat and lng are required.');
-  }
-  const isAssigned = await isUserAssignedHelperForEvent(req.auth?.uid, data.eventId);
-  const { uid } = requireAdminOrHelperFor(req, isAssigned);
+const updateLocationSchema: Schema = {
+  eventId: { type: 'string', minLength: 1, maxLength: 200 },
+  lat: { type: 'number', min: -90, max: 90 },
+  lng: { type: 'number', min: -180, max: 180 },
+  label: { type: 'string', optional: true, maxLength: 200 },
+  notes: { type: 'string', optional: true, maxLength: 1000 },
+  notifyAttending: { type: 'boolean', optional: true },
+  idempotencyKey: { type: 'string', optional: true, maxLength: 200 },
+};
 
-  const eventRef = admin.firestore().collection('events').doc(data.eventId);
-  const before = (await eventRef.get()).data();
-
-  await eventRef.update({
-    parkedBusLocation: {
-      lat: data.lat,
-      lng: data.lng,
-      label: data.label ?? '',
-      notes: data.notes ?? '',
-      updatedByUserId: uid,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    },
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-
-  await writeAuditLog({
-    actorUserId: uid,
-    action: 'update_parked_bus_location',
-    entityType: 'event',
-    entityPath: `events/${data.eventId}`,
-    before: before?.parkedBusLocation,
-    after: { lat: data.lat, lng: data.lng, label: data.label, notes: data.notes },
-  });
-
-  if (data.notifyAttending) {
-    const targets = await loadAttendingUserIds(data.eventId);
-    await sendNotificationToUsers({
-      eventId: data.eventId,
-      type: 'operational_update',
-      title: 'Parked-bus location updated',
-      body: data.label ? `Bus parked: ${data.label}` : 'Bus parked location updated.',
-      targetUserIds: targets,
-      sentByUserId: uid,
-      data: { eventId: data.eventId, screen: 'event_detail' },
-    });
-  }
-  return { ok: true };
-});
+export const updateParkedBusLocation = onCall<UpdateLocationInput>(
+  callableDefaults,
+  async (req) => {
+    const data = validate<UpdateLocationInput>(req.data, updateLocationSchema);
+    const isAssigned = await isUserAssignedHelperForEvent(req.auth?.uid, data.eventId);
+    const { uid } = requireAdminOrHelperFor(req, isAssigned);
+    try {
+      const eventRef = admin.firestore().collection('events').doc(data.eventId);
+      const before = (await eventRef.get()).data();
+      await eventRef.update({
+        parkedBusLocation: {
+          lat: data.lat,
+          lng: data.lng,
+          label: data.label ?? '',
+          notes: data.notes ?? '',
+          updatedByUserId: uid,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      await writeAuditLog({
+        actorUserId: uid,
+        action: 'update_parked_bus_location',
+        entityType: 'event',
+        entityPath: `events/${data.eventId}`,
+        before: before?.parkedBusLocation,
+        after: { lat: data.lat, lng: data.lng, label: data.label, notes: data.notes },
+      });
+      if (data.notifyAttending) {
+        const targets = await loadAttendingUserIds(data.eventId);
+        await sendNotificationToUsers({
+          eventId: data.eventId,
+          type: 'operational_update',
+          title: 'Parked-bus location updated',
+          body: data.label
+            ? `Bus parked: ${data.label}`
+            : 'Bus parked location updated.',
+          targetUserIds: targets,
+          sentByUserId: uid,
+          data: { eventId: data.eventId, screen: 'event_detail' },
+          idempotencyKey: data.idempotencyKey
+            ? `parked-bus:${data.eventId}:${data.idempotencyKey}`
+            : undefined,
+        });
+      }
+      return { ok: true };
+    } catch (err) {
+      await reportFailure(
+        {
+          actorUserId: uid,
+          action: 'update_parked_bus_location',
+          entityType: 'event',
+          entityPath: `events/${data.eventId}`,
+        },
+        err,
+      );
+      throw err;
+    }
+  },
+);
 
 async function isUserAssignedHelperForEvent(
   uid: string | undefined,

@@ -10,20 +10,59 @@ interface SendArgs {
   targetUserIds: string[];
   sentByUserId: string;
   data?: Record<string, string>;
+  /**
+   * Optional deterministic id. When provided, repeated calls with the same
+   * id are deduplicated: the first call writes the notifications/{id}
+   * record and dispatches FCM, subsequent calls observe the existing
+   * record and return without re-sending. This protects against duplicate
+   * sends when a callable is retried by the platform or by a user
+   * tapping a button twice. Without an idempotencyKey, every call writes
+   * a fresh document (existing behaviour).
+   */
+  idempotencyKey?: string;
 }
 
 /**
  * Persist a notifications/{notificationId} record and send the FCM payload to
  * every device token registered for the target users. Records the final
  * delivery status for audit/troubleshooting.
+ *
+ * Side-effect failure policy:
+ *
+ * - Database write failure: bubble up. The caller is expected to surface the
+ *   error and let the platform retry (callable returns 500; trigger retries).
+ * - FCM partial delivery: the notifications/{id} record is updated to
+ *   `partial_failure` so operators can see which sends did not succeed,
+ *   but the function returns success. Per-token failures are not
+ *   actionable from the caller's perspective.
+ * - FCM total failure: the record is set to `failed` and the function
+ *   returns success rather than throwing, again because the failure is
+ *   already auditable in Firestore and re-running the callable would
+ *   produce duplicate notifications. Operators should investigate via
+ *   the runbook (`docs/runbooks/notifications.md`).
  */
 export async function sendNotificationToUsers(args: SendArgs): Promise<string> {
   const db = admin.firestore();
   const messaging = admin.messaging();
 
   const targetUserIds = uniq(args.targetUserIds);
-  const notificationRef = db.collection('notifications').doc();
-  const baseRecord = {
+  const notifId = args.idempotencyKey
+    ? encodeId(args.idempotencyKey)
+    : db.collection('notifications').doc().id;
+  const notificationRef = db.collection('notifications').doc(notifId);
+
+  if (args.idempotencyKey) {
+    const existing = await notificationRef.get();
+    if (existing.exists) {
+      logger.info('sendNotificationToUsers: idempotent replay, skipping send', {
+        notificationId: notifId,
+        type: args.type,
+      });
+      return notifId;
+    }
+  }
+
+  await notificationRef.set({
     eventId: args.eventId,
     type: args.type,
     title: args.title,
@@ -32,34 +71,33 @@ export async function sendNotificationToUsers(args: SendArgs): Promise<string> {
     sentByUserId: args.sentByUserId,
     status: 'queued' as const,
     data: args.data ?? {},
+    idempotencyKey: args.idempotencyKey ?? null,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     sentAt: null,
-  };
-  await notificationRef.set(baseRecord);
+  });
 
   if (targetUserIds.length === 0) {
     await notificationRef.update({
       status: 'sent',
       sentAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    return notificationRef.id;
+    return notifId;
   }
 
   const tokens = await loadFcmTokens(targetUserIds);
   if (tokens.length === 0) {
     logger.info('sendNotificationToUsers: no tokens for target users', {
-      notificationId: notificationRef.id,
+      notificationId: notifId,
       targetUserIds,
     });
     await notificationRef.update({
       status: 'sent',
       sentAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    return notificationRef.id;
+    return notifId;
   }
 
   let failureCount = 0;
-  // sendEachForMulticast handles up to 500 tokens per call.
   for (const batch of chunk(tokens, 500)) {
     const response = await messaging.sendEachForMulticast({
       tokens: batch,
@@ -77,15 +115,16 @@ export async function sendNotificationToUsers(args: SendArgs): Promise<string> {
         : 'partial_failure';
   await notificationRef.update({
     status,
+    failureCount,
+    tokenCount: tokens.length,
     sentAt: admin.firestore.FieldValue.serverTimestamp(),
   });
-  return notificationRef.id;
+  return notifId;
 }
 
 async function loadFcmTokens(userIds: string[]): Promise<string[]> {
   const db = admin.firestore();
   const tokens: string[] = [];
-  // Firestore "in" supports up to 30 values; loop in chunks.
   for (const userId of userIds) {
     const snap = await db
       .collection('users')
@@ -108,4 +147,8 @@ function chunk<T>(arr: T[], size: number): T[][] {
 
 function uniq<T>(arr: T[]): T[] {
   return Array.from(new Set(arr));
+}
+
+function encodeId(raw: string): string {
+  return raw.replace(/[/\s]/g, '-').slice(0, 1500);
 }

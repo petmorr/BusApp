@@ -40,16 +40,27 @@ service cloud.firestore {
       );
     }
 
-    // True if the signed-in user has an active link to the given member.
-    function userIsLinkedToMember(memberId) {
-      return isSignedIn() &&
-        exists(/databases/$(database)/documents/memberUserLinks/$(request.auth.uid + '_' + memberId));
+    // True if the signed-in user has a memberUserLink document at the
+    // canonical id `${uid}_${memberId}`. Callers should still check link
+    // status when they need an *active* link.
+    function userHasLinkDocFor(memberId) {
+      return isSignedIn() && exists(
+        /databases/$(database)/documents/memberUserLinks/$(request.auth.uid + '_' + memberId)
+      );
     }
 
-    // Convenience: the field has not changed between request.resource and
-    // resource (i.e. the client is not trying to mutate it).
-    function unchanged(field) {
-      return resource.data[field] == request.resource.data[field];
+    // True only when the signed-in user has an *active* link to memberId.
+    function userIsActivelyLinkedToMember(memberId) {
+      return userHasLinkDocFor(memberId)
+        && get(/databases/$(database)/documents/memberUserLinks/$(request.auth.uid + '_' + memberId)).data.status == 'active';
+    }
+
+    // Canonical id format for memberUserLinks. The single composite id keeps
+    // the (userId, memberId) pair unique without an extra index, and lets the
+    // rule layer evaluate "is this user linked to that member?" with an O(1)
+    // exists() / get() rather than a query.
+    function isCanonicalLinkId(linkId, userId, memberId) {
+      return linkId == userId + '_' + memberId;
     }
 
     // -------- users --------
@@ -81,32 +92,40 @@ service cloud.firestore {
     }
 
     // -------- members --------
+    //
+    // Privacy posture: a member document is readable only by admins or by a
+    // user who already has a memberUserLink doc to that member. Listing the
+    // full member directory is admin-only. See docs/privacy.md.
 
     match /members/{memberId} {
-      // Anyone signed in can read members so the app can display
-      // names/phone for linked members. (For stricter privacy this can be
-      // tightened to only members the user is linked to + admins; left open
-      // for MVP simplicity.)
-      allow read: if isSignedIn();
+      allow get: if isAdmin() || userHasLinkDocFor(memberId);
+      allow list: if isAdmin();
       allow create, update, delete: if isAdmin();
     }
 
     // -------- memberUserLinks --------
-    // Document IDs SHOULD use the convention `${userId}_${memberId}` so the
-    // helper above can perform an O(1) existence check.
+    // Document IDs MUST use the canonical `${userId}_${memberId}` format.
 
     match /memberUserLinks/{linkId} {
-      allow read: if isAdmin()
+      allow get: if isAdmin()
         || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow list: if isAdmin();
 
-      // Users may create a *pending* link for themselves during signup. Admin
-      // approval is required before the link becomes active.
-      allow create: if isAdmin() || (
-        isSignedIn()
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.status == 'pending'
-        && request.resource.data.requestedDuringSignup == true
-      );
+      // Admins may create any link, but the id must still be canonical so the
+      // exists() helper above remains correct.
+      // Users may only request a *pending* self-link during signup.
+      allow create: if (
+          isAdmin()
+          && isCanonicalLinkId(linkId, request.resource.data.userId, request.resource.data.memberId)
+        ) || (
+          isSignedIn()
+          && request.resource.data.userId == request.auth.uid
+          && isCanonicalLinkId(linkId, request.resource.data.userId, request.resource.data.memberId)
+          && request.resource.data.status == 'pending'
+          && request.resource.data.requestedDuringSignup == true
+          && request.resource.data.createdByAdminId == null
+          && request.resource.data.approvedByAdminId == null
+        );
 
       // Only admins can change link status, role, or approval metadata.
       allow update, delete: if isAdmin();
@@ -147,14 +166,14 @@ service cloud.firestore {
       // -------- memberResponses --------
       match /memberResponses/{memberId} {
         allow read: if isAdmin()
-          || (isSignedIn() && userIsLinkedToMember(memberId));
+          || (isSignedIn() && userHasLinkDocFor(memberId));
 
         // Users may create/update their own member's response, before cutoff.
         // Cloud Functions perform the deeper validation (cutoff, stop type
         // match, link active, member active, event open).
         allow create, update: if isAdmin() || (
           isSignedIn()
-          && userIsLinkedToMember(memberId)
+          && userIsActivelyLinkedToMember(memberId)
           && request.resource.data.memberId == memberId
           && request.resource.data.respondingUserId == request.auth.uid
           && request.resource.data.isAdminOverride == false
