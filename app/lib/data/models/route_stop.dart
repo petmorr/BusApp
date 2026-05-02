@@ -1,6 +1,23 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum StopType { outbound_pickup, event_dropoff, event_pickup, return_dropoff }
+enum StopType {
+  outboundPickup('outbound_pickup'),
+  eventDropoff('event_dropoff'),
+  eventPickup('event_pickup'),
+  returnDropoff('return_dropoff');
+
+  const StopType(this.wire);
+
+  /// String stored in Firestore for this enum value.
+  final String wire;
+
+  static StopType fromWire(String? value) {
+    return StopType.values.firstWhere(
+      (t) => t.wire == value,
+      orElse: () => StopType.outboundPickup,
+    );
+  }
+}
 
 class StopLocation {
   const StopLocation({required this.lat, required this.lng, this.address});
@@ -33,10 +50,7 @@ class RouteStop {
     return RouteStop(
       id: doc.id,
       name: data['name'] as String? ?? '',
-      type: StopType.values.firstWhere(
-        (t) => t.name == (data['type'] as String? ?? 'outbound_pickup'),
-        orElse: () => StopType.outbound_pickup,
-      ),
+      type: StopType.fromWire(data['type'] as String?),
       sequence: (data['sequence'] as num?)?.toInt() ?? 0,
       isActive: data['isActive'] as bool? ?? true,
       scheduledAt: (data['scheduledAt'] as Timestamp?)?.toDate(),

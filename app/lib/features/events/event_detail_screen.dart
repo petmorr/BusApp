@@ -14,7 +14,6 @@ class EventDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final repo = ref.watch(eventsRepositoryProvider);
     final eventAsync = ref.watch(_eventProvider(eventId));
     final stopsAsync = ref.watch(_stopsProvider(eventId));
 
@@ -161,7 +160,7 @@ class _RouteList extends StatelessWidget {
           leading: const Icon(Icons.place_outlined),
           title: Text(stop.name),
           subtitle: Text(
-            '${stop.type.name.replaceAll('_', ' ')}'
+            '${stop.type.wire.replaceAll('_', ' ')}'
             '${stop.scheduledAt != null ? ' • ${DateFormat.Hm().format(stop.scheduledAt!.toLocal())}' : ''}',
           ),
           trailing: stop.location == null

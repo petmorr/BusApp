@@ -1,6 +1,21 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum MemberResponseStatus { attending, not_attending }
+enum MemberResponseStatus {
+  attending('attending'),
+  notAttending('not_attending');
+
+  const MemberResponseStatus(this.wire);
+
+  /// String stored in Firestore for this enum value.
+  final String wire;
+
+  static MemberResponseStatus fromWire(String? value) {
+    return MemberResponseStatus.values.firstWhere(
+      (s) => s.wire == value,
+      orElse: () => MemberResponseStatus.attending,
+    );
+  }
+}
 
 class MemberResponse {
   const MemberResponse({
@@ -18,10 +33,7 @@ class MemberResponse {
     return MemberResponse(
       memberId: data['memberId'] as String? ?? doc.id,
       respondingUserId: data['respondingUserId'] as String? ?? '',
-      status: MemberResponseStatus.values.firstWhere(
-        (s) => s.name == (data['status'] as String? ?? 'attending'),
-        orElse: () => MemberResponseStatus.attending,
-      ),
+      status: MemberResponseStatus.fromWire(data['status'] as String?),
       isAdminOverride: data['isAdminOverride'] as bool? ?? false,
       outboundPickupStopId: data['outboundPickupStopId'] as String?,
       returnDropoffStopId: data['returnDropoffStopId'] as String?,

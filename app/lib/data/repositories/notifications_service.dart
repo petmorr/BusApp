@@ -57,7 +57,7 @@ class NotificationsService {
       'platform': platform,
       'createdAt': FieldValue.serverTimestamp(),
       'lastSeenAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    }, SetOptions(merge: true),);
   }
 
   // ----- Cloud Function callables -----

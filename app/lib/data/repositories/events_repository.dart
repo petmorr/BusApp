@@ -83,7 +83,7 @@ class EventsRepository {
     await doc.set({
       'memberId': memberId,
       'respondingUserId': respondingUserId,
-      'status': status.name,
+      'status': status.wire,
       'outboundPickupStopId': outboundPickupStopId,
       'returnDropoffStopId': returnDropoffStopId,
       'generalNotes': generalNotes ?? '',
@@ -95,7 +95,7 @@ class EventsRepository {
       'memberDisplayName': memberDisplayName,
       'updatedAt': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    }, SetOptions(merge: true),);
   }
 
   Future<DocumentReference<Map<String, dynamic>>> createGuestRequest({
