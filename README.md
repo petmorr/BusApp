@@ -17,6 +17,7 @@ supporters-bus-app/
     indexes/   # Firestore composite indexes
     seed/      # Sample CSV / seed data
     tests/     # Emulator integration tests for the rules
+  e2e/         # End-to-end tests against the full emulator stack
   scripts/     # Member import and admin utilities
   docs/        # Spec, setup, runbook, privacy, milestones, ADRs, runbooks
   firebase.json
@@ -65,6 +66,7 @@ Quick start:
 | [`docs/runbooks/`](docs/runbooks/) | Per-failure-mode incident runbooks. |
 | [`docs/adr/`](docs/adr/) | Architecture decision records. |
 | [`docs/production-readiness.md`](docs/production-readiness.md) | P0 / P1 / P2 hardening checklist. |
+| [`docs/release.md`](docs/release.md) | Release pipeline, Crashlytics symbol upload, signing secrets. |
 | [`docs/milestones.md`](docs/milestones.md) | Milestone breakdown and test inventory. |
 
 ## Status
@@ -83,7 +85,7 @@ Milestone-level completion checklist (full breakdown in
 | 7 | Capacity, Reminders, and Notifications | **Done (backend)** — capacity helper, Firestore triggers with retryable/permanent error classification, capacity alerts, attendance / pending-guest reminder callables, FCM fan-out with idempotency keys; client UI TODO |
 | 8 | Helper Operations and Parked-Bus Location | **Partial** — `updateParkedBusLocation`, helper assign/unassign, operational update callables; helper UI screens TODO |
 | 9 | Admin Attendance Board and History | **Partial** — required indexes + denormalised history fields on `memberResponses`; admin board + history screens TODO |
-| 10 | Security, Testing, and Release | **Mostly done** — Firestore rules with role-based access + canonical link-id enforcement; **47** Firestore-rule integration tests on the emulator; **21** backend unit tests; App Check enforcement; centralised payload validation; structured failure handling; SLOs + runbooks; CI runs all of the above. App Check / Crashlytics enablement, device matrix testing, and store release pipelines are tracked in `docs/production-readiness.md`. |
+| 10 | Security, Testing, and Release | **Done (testing layer)** — privacy-hardened Firestore rules with canonical link-id enforcement; **47** Firestore-rule integration tests; **30** backend unit tests; **14** end-to-end tests against the full emulator stack; App Check enforcement; centralised payload validation; structured failure handling with PII redaction; SLOs + runbooks; Dependabot + `npm audit` gate; CI runs all of the above. Stage / prod project provisioning + signing secrets remain — see `docs/release.md`. |
 
-For the per-item production-readiness state see
+For the per-item production-readiness state and per-area scorecard see
 [`docs/production-readiness.md`](docs/production-readiness.md).
