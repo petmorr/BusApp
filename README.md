@@ -12,9 +12,13 @@ This repository implements the MVP described in
 supporters-bus-app/
   app/         # Flutter mobile app (iOS + Android)
   functions/   # Firebase Cloud Functions (TypeScript)
-  firestore/   # Firestore security rules, indexes, seed data
+  firestore/
+    rules/     # Firestore security rules
+    indexes/   # Firestore composite indexes
+    seed/      # Sample CSV / seed data
+    tests/     # Emulator integration tests for the rules
   scripts/     # Member import and admin utilities
-  docs/        # Setup, runbook, spec
+  docs/        # Spec, setup, runbook, privacy, milestones, ADRs, runbooks
   firebase.json
   .firebaserc.example
 ```
@@ -26,7 +30,8 @@ supporters-bus-app/
 - Firebase Authentication (phone OTP).
 - Cloud Firestore.
 - Firebase Cloud Messaging.
-- Cloud Functions for Firebase (TypeScript).
+- Cloud Functions for Firebase (TypeScript), with App Check enforcement on
+  every callable.
 - Apple Maps / Google Maps via external maps launcher.
 
 ## Getting started
@@ -36,23 +41,49 @@ See [`docs/setup.md`](docs/setup.md) for full setup instructions, and
 
 Quick start:
 
-1. Install Flutter, Node 20, and the Firebase CLI.
+1. Install Flutter, Node 20, the Firebase CLI, and Java 17 (for the
+   Firestore emulator).
 2. `cd functions && npm install`
 3. `cd app && flutter pub get`
-4. Create `dev`/`prod` Firebase projects, copy `.firebaserc.example` to
+4. `cd firestore/tests && npm install --legacy-peer-deps`
+5. Create `dev`/`prod` Firebase projects, copy `.firebaserc.example` to
    `.firebaserc` and update the project IDs.
-5. Run the Firebase emulator suite: `firebase emulators:start`
-6. Run the app: `cd app && flutter run`
+6. Run the Firebase emulator suite: `firebase emulators:start`
+7. Run the app: `cd app && flutter run --dart-define=USE_FIREBASE_EMULATOR=true`
+
+## Documentation
+
+| Doc | Purpose |
+|-----|---------|
+| [`docs/spec.md`](docs/spec.md) | Markdown summary of SPEC-1 (PDF in `docs/spec.pdf`). |
+| [`docs/setup.md`](docs/setup.md) | Local setup, Firebase project provisioning, FlutterFire. |
+| [`docs/runbook.md`](docs/runbook.md) | Admin / helper operating runbook. |
+| [`docs/privacy.md`](docs/privacy.md) | Privacy posture for member directory and the rest of the data model. |
+| [`docs/environments.md`](docs/environments.md) | dev / stage / prod separation, IAM, deploy gates. |
+| [`docs/observability.md`](docs/observability.md) | Inputs, dashboards, redaction policy, incident queries. |
+| [`docs/slo.md`](docs/slo.md) | Service-level objectives and alert thresholds. |
+| [`docs/runbooks/`](docs/runbooks/) | Per-failure-mode incident runbooks. |
+| [`docs/adr/`](docs/adr/) | Architecture decision records. |
+| [`docs/production-readiness.md`](docs/production-readiness.md) | P0 / P1 / P2 hardening checklist. |
+| [`docs/milestones.md`](docs/milestones.md) | Milestone breakdown and test inventory. |
 
 ## Status
 
-This is an initial scaffold. Each milestone in `docs/spec.md` builds on this
-foundation:
+Milestone-level completion checklist (full breakdown in
+[`docs/milestones.md`](docs/milestones.md)):
 
-- Project skeleton, security rules, indexes, capacity logic, and notification
-  callables are scaffolded.
-- Flutter feature folders contain placeholder screens and shared models that
-  match the Firestore schema.
-- A CSV-driven member import script is provided under `scripts/`.
+| # | Milestone | Status |
+|---|-----------|--------|
+| 1 | Product Finalisation and Setup | **Done** — repo layout, Firebase config, CI, docs (spec, setup, runbook, privacy, environments, slo, observability, runbooks, ADRs, milestones, production-readiness) |
+| 2 | Authentication and User Foundation | **Partial** — phone-OTP login screen, role-aware router with `/admin` and `/helper` guards, FCM token registration |
+| 3 | Member and Representation Management | **Partial** — full data model + CSV import script; admin UI TODO |
+| 4 | Event and Route Management | **Partial** — data model + Firestore rules + repositories + capacity recalculation; admin event/route editor UI TODO |
+| 5 | Member Attendance Flow | **Partial** — data model + repository write path + cutoff field; full attendance UI TODO |
+| 6 | Guest Requests and Admin Approval | **Done (backend)** — transaction-safe `approveGuestRequest` / `rejectGuestRequest` callables with idempotent notifications and structured failure handling; admin UI TODO |
+| 7 | Capacity, Reminders, and Notifications | **Done (backend)** — capacity helper, Firestore triggers with retryable/permanent error classification, capacity alerts, attendance / pending-guest reminder callables, FCM fan-out with idempotency keys; client UI TODO |
+| 8 | Helper Operations and Parked-Bus Location | **Partial** — `updateParkedBusLocation`, helper assign/unassign, operational update callables; helper UI screens TODO |
+| 9 | Admin Attendance Board and History | **Partial** — required indexes + denormalised history fields on `memberResponses`; admin board + history screens TODO |
+| 10 | Security, Testing, and Release | **Mostly done** — Firestore rules with role-based access + canonical link-id enforcement; **47** Firestore-rule integration tests on the emulator; **21** backend unit tests; App Check enforcement; centralised payload validation; structured failure handling; SLOs + runbooks; CI runs all of the above. App Check / Crashlytics enablement, device matrix testing, and store release pipelines are tracked in `docs/production-readiness.md`. |
 
-See [`docs/milestones.md`](docs/milestones.md) for the milestone breakdown.
+For the per-item production-readiness state see
+[`docs/production-readiness.md`](docs/production-readiness.md).
