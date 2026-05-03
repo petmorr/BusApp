@@ -74,9 +74,10 @@ This is enforced in three places:
    `linkId == request.resource.data.userId + '_' + request.resource.data.memberId`.
 2. The `approveMemberUserLink` Cloud Function rejects any pending document
    whose id does not match the format.
-3. The Flutter `MemberUserLink.idFor(userId, memberId)` helper is used by
-   `MembersRepository.requestPendingLink`, so the app never produces a
-   non-canonical id either.
+3. User-initiated link creation goes exclusively through the
+   `requestMemberLinkByNumber` Cloud Function, which computes
+   `${uid}_${memberId}` server-side — the app never writes to
+   `memberUserLinks` directly.
 
 This invariant is what lets the rule layer answer *"is this user linked to
 that member?"* with a single `exists()` call — no query, no extra index, no

@@ -48,26 +48,6 @@ class MembersRepository {
         .map((s) => s.docs.map(MemberUserLink.fromDoc).toList());
   }
 
-  Future<void> requestPendingLink({
-    required String userId,
-    required String memberId,
-    required Relationship relationship,
-  }) async {
-    final docId = MemberUserLink.idFor(userId, memberId);
-    await _db.collection('memberUserLinks').doc(docId).set({
-      'userId': userId,
-      'memberId': memberId,
-      'status': LinkStatus.pending.name,
-      'relationshipToUser': relationship.name,
-      'requestedDuringSignup': true,
-      'createdByAdminId': null,
-      'approvedByAdminId': null,
-      'approvedAt': null,
-      'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-  }
-
   /// Admin-only: list all members ordered by display name.
   Stream<List<Member>> watchAllMembers() {
     return _db

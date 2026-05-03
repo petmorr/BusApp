@@ -40,10 +40,10 @@ All four test suites match what CI runs (`.github/workflows/ci.yml`):
 
 | Suite | Command | Notes |
 |-------|---------|-------|
-| Functions unit tests (30) | `cd functions && npm test` | Pure unit tests, no emulators needed |
-| Firestore rule tests (47) | `cd firestore/tests && npm test` | Launches its own Firestore emulator via `firebase emulators:exec` |
-| E2E tests (14) | `cd e2e && npm test` | Builds functions first, launches auth+firestore+functions emulators |
-| Flutter tests (4) | `cd app && flutter test` | Widget/accessibility tests |
+| Functions unit tests (50) | `cd functions && npm test` | Pure unit tests, no emulators needed |
+| Firestore rule tests (65) | `cd firestore/tests && npm test` | Launches its own Firestore emulator via `firebase emulators:exec` |
+| E2E tests (20) | `cd e2e && npm test` | Builds functions first, launches auth+firestore+functions emulators |
+| Flutter tests (9) | `cd app && flutter test` | Widget/accessibility tests |
 
 ### Lint
 

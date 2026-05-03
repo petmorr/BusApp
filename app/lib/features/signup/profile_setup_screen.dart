@@ -31,6 +31,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   Relationship _relationship = Relationship.self;
   bool _busy = false;
   String? _error;
+  String? _linkInfo;
 
   @override
   void dispose() {
@@ -46,6 +47,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
     setState(() {
       _busy = true;
       _error = null;
+      _linkInfo = null;
     });
     try {
       final users = ref.read(usersRepositoryProvider);
@@ -54,24 +56,49 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       final memberNumber = _memberNumberController.text.trim();
       if (memberNumber.isNotEmpty) {
         // The members directory is privacy-gated to admins only, so the
-        // lookup-by-number happens server-side via a callable. The
-        // callable also validates the member is active and creates a
-        // pending link in a single transaction.
+        // lookup-by-number happens server-side via a callable.
+        //
+        // The callable returns the same generic success regardless of
+        // whether the number matched — this prevents signed-in users
+        // from enumerating member numbers. We therefore show a generic
+        // "submitted for review" message rather than navigating away
+        // immediately, so the user is not led to believe the link is
+        // already live.
         await FirebaseFunctions.instance
             .httpsCallable('requestMemberLinkByNumber')
             .call({
           'memberNumber': memberNumber,
           'relationshipToUser': _relationship.name,
         });
+        if (mounted) {
+          setState(() {
+            _linkInfo =
+                'Request submitted. If the member number matches a supporter, '
+                'an admin will review and approve the link shortly.';
+          });
+        }
+      } else if (mounted) {
+        context.go('/');
       }
-      if (mounted) context.go('/');
     } on FirebaseFunctionsException catch (err) {
-      setState(() => _error = err.message ?? 'Could not request link.');
+      // Surface only rate-limit / validation errors verbatim; anything else
+      // maps to a generic message so we do not leak backend state.
+      final msg = err.code == 'resource-exhausted'
+          ? (err.message ??
+              'Too many requests. Please wait a moment and try again.')
+          : err.code == 'invalid-argument'
+              ? (err.message ?? 'Please check the details you entered.')
+              : 'Could not submit your request. Please try again.';
+      setState(() => _error = msg);
     } catch (err) {
-      setState(() => _error = '$err');
+      setState(() => _error = 'Could not submit your request. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  void _continue() {
+    context.go('/');
   }
 
   @override
@@ -158,15 +185,27 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                         TextStyle(color: Theme.of(context).colorScheme.error),
                   ),
                 ),
+              if (_linkInfo != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    _linkInfo!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ),
               ElevatedButton(
-                onPressed: _busy ? null : _save,
+                onPressed: _busy
+                    ? null
+                    : (_linkInfo != null ? _continue : _save),
                 child: _busy
                     ? const SizedBox(
                         height: 20,
                         width: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Continue'),
+                    : Text(_linkInfo != null ? 'Continue' : 'Submit'),
               ),
             ],
           ),
