@@ -6,15 +6,15 @@ full deliverables/acceptance criteria).
 | # | Milestone | Status |
 |---|-----------|--------|
 | 1 | Product Finalisation and Setup | Done — repo layout, Firebase config, CI, docs (spec, setup, runbook, privacy, environments, slo, observability, runbooks, ADRs, milestones, production-readiness) |
-| 2 | Authentication and User Foundation | Partial — phone-OTP login screen, role-aware router with `/admin` and `/helper` guards, FCM token registration. Per-user signup with member-link request UI TODO |
-| 3 | Member and Representation Management | Partial — full data model + CSV import script. Admin member list / link approval UI TODO |
-| 4 | Event and Route Management | Partial — data model + Firestore rules + repositories + capacity recalculation triggers (with retryable / permanent error classification). Admin event/route editor UI TODO |
-| 5 | Member Attendance Flow | Partial — data model + repository write path + cutoff field. Full attendance UI TODO |
-| 6 | Guest Requests and Admin Approval | Done (backend) — transaction-safe `approveGuestRequest` / `rejectGuestRequest` callables with idempotent notifications, structured failure handling, audit-on-failure. Admin queue UI TODO |
-| 7 | Capacity, Reminders, and Notifications | Done (backend) — capacity helper, Firestore triggers, capacity alerts, attendance / pending-guest reminder callables, FCM fan-out with idempotency keys. Client UIs to invoke them TODO |
-| 8 | Helper Operations and Parked-Bus Location | Partial — `updateParkedBusLocation`, helper assign/unassign, operational update callables (App Check enforced, schema validated, idempotent). Helper UI screens TODO |
-| 9 | Admin Attendance Board and History | Partial — required indexes + denormalised history fields on `memberResponses`. Admin board + history screens TODO |
-| 10 | Security, Testing, and Release | Done (testing layer) — Firestore rules with role-based access + canonical link-id enforcement, 47 Firestore-rule integration tests, 30 backend unit tests, 14 end-to-end tests across the full Firebase emulator stack, App Check enforcement, centralised payload validation, structured failure handling, PII redaction in audit log, SLOs + runbooks, Dependabot + `npm audit` gate, GitHub Actions CI running five jobs. Stage / prod project provisioning + signing secrets tracked in `docs/release.md` and `docs/production-readiness.md` |
+| 2 | Authentication and User Foundation | Done — phone-OTP login screen, role-aware router with `/admin` and `/helper` guards, FCM token registration, post-sign-in profile bootstrap, signup screen with `requestMemberLinkByNumber` callable for privacy-preserving member-link requests |
+| 3 | Member and Representation Management | Done — full data model + CSV import script + admin members list (search, create, edit, delete, status changes) + admin pending-link queue with approve/reject |
+| 4 | Event and Route Management | Done — data model + Firestore rules + repositories + capacity recalculation triggers + admin event CRUD (details, status, capacity, cutoff), stop CRUD across the four stop types, helper assignment toggles, push reminder controls |
+| 5 | Member Attendance Flow | Done — data model + repository write path + cutoff field + attendance form with member picker, attending toggle, pickup-stop chooser, optional return drop-off, free-text notes, cutoff enforcement |
+| 6 | Guest Requests and Admin Approval | Done — transaction-safe `approveGuestRequest` / `rejectGuestRequest` callables with idempotent notifications, structured failure handling, audit-on-failure + user-facing guest request form + admin pending-guest queue (collection-group query) with approve/reject |
+| 7 | Capacity, Reminders, and Notifications | Done — capacity helper, Firestore triggers, capacity alerts, attendance / pending-guest reminder callables, FCM fan-out with idempotency keys + admin reminders tab to invoke them, plus operational-update form |
+| 8 | Helper Operations and Parked-Bus Location | Done — `updateParkedBusLocation`, helper assign/unassign, operational update callables (App Check enforced, schema validated, idempotent) + helper UI: assigned-events list (collection-group query), parked-bus pin form (use-my-location + manual coordinates), operational update form |
+| 9 | Admin Attendance Board and History | Done — required indexes + denormalised history fields on `memberResponses` + per-event attendance board (capacity totals, attending grouped by stop, not-attending list, guest groupings) + cross-event history with member/event search |
+| 10 | Security, Testing, and Release | Done (testing layer) — Firestore rules with role-based access + canonical link-id enforcement, **49** Firestore-rule integration tests, **30** backend unit tests, **17** end-to-end tests across the full Firebase emulator stack, **9** Flutter widget tests, App Check enforcement, centralised payload validation, structured failure handling, PII redaction in audit log, SLOs + runbooks, Dependabot + `npm audit` gate, GitHub Actions CI running five jobs. Stage / prod project provisioning + signing secrets tracked in `docs/release.md` and `docs/production-readiness.md` |
 
 ## Test inventory
 
@@ -30,7 +30,8 @@ Firestore emulator):
 
 - `memberResponses.test.ts` — 7 tests.
 - `guestRequests.test.ts` — 8 tests.
-- `helpers_assignment.test.ts` — 6 tests.
+- `helpers_assignment.test.ts` — 8 tests (incl. collection-group read
+  coverage for the helper-events query).
 - `admin.test.ts` — 15 tests.
 - `denyPaths.test.ts` — 11 tests (P0 deny-path coverage matrix).
 
@@ -48,15 +49,22 @@ Functions emulator stack):
 - `helper_operational_update.test.ts` — 4 tests (assigned helper pin
   + lat/lng redaction in audit; unassigned helper denied; admin send
   operational update; out-of-range latitude rejected by validator).
+- `request_member_link_by_number.test.ts` — 3 tests (callable creates
+  pending self-link; unknown member number rejected; idempotent replay
+  on already-active link).
 
 Flutter app (`app/test/`):
 
 - `widget_test.dart` — 1 test (theme builds without errors).
 - `accessibility_test.dart` — 3 tests (Material tap target, labelled
   tap targets + contrast, textScaler floor).
+- `ui_patterns_accessibility_test.dart` — 5 tests (form labels +
+  contrast, SegmentedButton tap target + labelling, SwitchListTile
+  labelling + tap target, FilledButton/OutlinedButton row tap targets,
+  admin/helper menu Card → ListTile titles).
 
-**Totals: 30 backend unit tests + 47 Firestore-rule integration tests +
-14 end-to-end tests + 4 Flutter widget tests = 95 tests.**
+**Totals: 30 backend unit tests + 49 Firestore-rule integration tests +
+17 end-to-end tests + 9 Flutter widget tests = 105 tests.**
 
 ## Production readiness
 
