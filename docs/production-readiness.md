@@ -66,8 +66,8 @@ review. P0 must be **Done** before the first prod deploy.
         end-to-end suites.
 - [x] End-to-end integration tests for: login + profile creation,
       response submission, guest request decision, helper operational
-      update.
-      ([`e2e/`](../e2e/) — 14 tests across 4 suites against the full
+      update, member-link-by-number lookup.
+      ([`e2e/`](../e2e/) — 17 tests across 5 suites against the full
       Firebase emulator stack.)
 
 ### Operational readiness
@@ -106,9 +106,13 @@ review. P0 must be **Done** before the first prod deploy.
       `CRASHLYTICS_API_TOKEN_*` and signing secrets are provisioned in
       GitHub Environments.
 - [x] Accessibility baseline checks
-      ([`app/test/accessibility_test.dart`](../app/test/accessibility_test.dart))
-      — Material tap target guideline, labelled tap targets, contrast,
-      and the textScaler floor.
+      ([`app/test/accessibility_test.dart`](../app/test/accessibility_test.dart) +
+      [`app/test/ui_patterns_accessibility_test.dart`](../app/test/ui_patterns_accessibility_test.dart))
+      — Material tap target guideline applied to every button family
+      (Elevated / Filled / Outlined / Text / Segmented) at ≥56dp,
+      labelled tap targets, contrast, the textScaler floor, plus
+      regression coverage for SwitchListTile and the admin/helper
+      Card → ListTile menu pattern.
 
 ### Security operations
 

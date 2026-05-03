@@ -2,11 +2,23 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/admin/admin_attendance_board_screen.dart';
+import '../../features/admin/admin_attendance_history_screen.dart';
 import '../../features/admin/admin_dashboard_screen.dart';
+import '../../features/admin/admin_event_edit_screen.dart';
+import '../../features/admin/admin_events_screen.dart';
+import '../../features/admin/admin_guest_queue_screen.dart';
+import '../../features/admin/admin_members_screen.dart';
+import '../../features/admin/admin_pending_links_screen.dart';
+import '../../features/attendance/attendance_form_screen.dart';
 import '../../features/events/event_detail_screen.dart';
 import '../../features/events/events_list_screen.dart';
+import '../../features/guests/guest_request_screen.dart';
+import '../../features/helper/helper_assigned_events_screen.dart';
 import '../../features/helper/helper_dashboard_screen.dart';
+import '../../features/helper/helper_event_screen.dart';
 import '../../features/login/phone_login_screen.dart';
+import '../../features/signup/profile_setup_screen.dart';
 import '../auth/auth_state.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -24,10 +36,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // source of truth, but redirecting unauthorised users *before* they
       // see admin/helper surfaces avoids confusing "permission denied"
       // errors for the common case of a misclick.
-      if (state.matchedLocation == '/admin' && !(roles?.isAdmin ?? false)) {
+      if (state.matchedLocation.startsWith('/admin') &&
+          !(roles?.isAdmin ?? false)) {
         return '/';
       }
-      if (state.matchedLocation == '/helper' &&
+      if (state.matchedLocation.startsWith('/helper') &&
           !(roles?.isHelper ?? false) &&
           !(roles?.isAdmin ?? false)) {
         return '/';
@@ -41,6 +54,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, __) => const PhoneLoginScreen(),
       ),
       GoRoute(
+        path: '/signup',
+        builder: (_, __) => const ProfileSetupScreen(),
+      ),
+      GoRoute(
         path: '/',
         builder: (_, __) => const EventsListScreen(),
         routes: [
@@ -48,14 +65,85 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: 'events/:eventId',
             builder: (context, state) =>
                 EventDetailScreen(eventId: state.pathParameters['eventId']!),
+            routes: [
+              GoRoute(
+                path: 'attendance',
+                builder: (context, state) => AttendanceFormScreen(
+                  eventId: state.pathParameters['eventId']!,
+                ),
+              ),
+              GoRoute(
+                path: 'guest',
+                builder: (context, state) => GuestRequestScreen(
+                  eventId: state.pathParameters['eventId']!,
+                ),
+              ),
+            ],
           ),
           GoRoute(
             path: 'admin',
             builder: (_, __) => const AdminDashboardScreen(),
+            routes: [
+              GoRoute(
+                path: 'members',
+                builder: (_, __) => const AdminMembersScreen(),
+              ),
+              GoRoute(
+                path: 'pending-links',
+                builder: (_, __) => const AdminPendingLinksScreen(),
+              ),
+              GoRoute(
+                path: 'guest-requests',
+                builder: (_, __) => const AdminGuestQueueScreen(),
+              ),
+              GoRoute(
+                path: 'attendance-history',
+                builder: (_, __) => const AdminAttendanceHistoryScreen(),
+              ),
+              GoRoute(
+                path: 'events',
+                builder: (_, __) => const AdminEventsScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'new',
+                    builder: (_, __) => const AdminEventEditScreen(),
+                  ),
+                  GoRoute(
+                    path: ':eventId',
+                    builder: (context, state) => AdminEventEditScreen(
+                      eventId: state.pathParameters['eventId']!,
+                    ),
+                    routes: [
+                      GoRoute(
+                        path: 'board',
+                        builder: (context, state) =>
+                            AdminAttendanceBoardScreen(
+                          eventId: state.pathParameters['eventId']!,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
           ),
           GoRoute(
             path: 'helper',
             builder: (_, __) => const HelperDashboardScreen(),
+            routes: [
+              GoRoute(
+                path: 'events',
+                builder: (_, __) => const HelperAssignedEventsScreen(),
+                routes: [
+                  GoRoute(
+                    path: ':eventId',
+                    builder: (context, state) => HelperEventScreen(
+                      eventId: state.pathParameters['eventId']!,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ],
       ),

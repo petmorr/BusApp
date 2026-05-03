@@ -77,15 +77,15 @@ Milestone-level completion checklist (full breakdown in
 | # | Milestone | Status |
 |---|-----------|--------|
 | 1 | Product Finalisation and Setup | **Done** — repo layout, Firebase config, CI, docs (spec, setup, runbook, privacy, environments, slo, observability, runbooks, ADRs, milestones, production-readiness) |
-| 2 | Authentication and User Foundation | **Partial** — phone-OTP login screen, role-aware router with `/admin` and `/helper` guards, FCM token registration |
-| 3 | Member and Representation Management | **Partial** — full data model + CSV import script; admin UI TODO |
-| 4 | Event and Route Management | **Partial** — data model + Firestore rules + repositories + capacity recalculation; admin event/route editor UI TODO |
-| 5 | Member Attendance Flow | **Partial** — data model + repository write path + cutoff field; full attendance UI TODO |
-| 6 | Guest Requests and Admin Approval | **Done (backend)** — transaction-safe `approveGuestRequest` / `rejectGuestRequest` callables with idempotent notifications and structured failure handling; admin UI TODO |
-| 7 | Capacity, Reminders, and Notifications | **Done (backend)** — capacity helper, Firestore triggers with retryable/permanent error classification, capacity alerts, attendance / pending-guest reminder callables, FCM fan-out with idempotency keys; client UI TODO |
-| 8 | Helper Operations and Parked-Bus Location | **Partial** — `updateParkedBusLocation`, helper assign/unassign, operational update callables; helper UI screens TODO |
-| 9 | Admin Attendance Board and History | **Partial** — required indexes + denormalised history fields on `memberResponses`; admin board + history screens TODO |
-| 10 | Security, Testing, and Release | **Done (testing layer)** — privacy-hardened Firestore rules with canonical link-id enforcement; **47** Firestore-rule integration tests; **30** backend unit tests; **14** end-to-end tests against the full emulator stack; App Check enforcement; centralised payload validation; structured failure handling with PII redaction; SLOs + runbooks; Dependabot + `npm audit` gate; CI runs all of the above. Stage / prod project provisioning + signing secrets remain — see `docs/release.md`. |
+| 2 | Authentication and User Foundation | **Done** — phone-OTP login screen, role-aware router with `/admin` and `/helper` guards, FCM token registration, post-sign-in profile bootstrap, profile-setup screen with privacy-preserving `requestMemberLinkByNumber` callable |
+| 3 | Member and Representation Management | **Done** — full data model + CSV import script + admin members list (search, create, edit, delete) + pending member-user-link queue with approve/reject |
+| 4 | Event and Route Management | **Done** — data model + Firestore rules + repositories + capacity recalculation triggers + admin event CRUD + per-stop-type stop editor + helper assignment toggles |
+| 5 | Member Attendance Flow | **Done** — data model + repository write path + cutoff field + member attendance form (member picker, attending toggle, pickup/return stop chooser, notes, cutoff enforcement) |
+| 6 | Guest Requests and Admin Approval | **Done** — transaction-safe `approveGuestRequest` / `rejectGuestRequest` callables with idempotent notifications and structured failure handling + user guest-request form + admin pending-guest queue with approve/reject |
+| 7 | Capacity, Reminders, and Notifications | **Done** — capacity helper, Firestore triggers with retryable/permanent error classification, capacity alerts, attendance / pending-guest reminder callables, FCM fan-out with idempotency keys + admin reminders tab + operational update form |
+| 8 | Helper Operations and Parked-Bus Location | **Done** — `updateParkedBusLocation`, helper assign/unassign, operational update callables + helper UI: assigned-events list, parked-bus pin form (use-my-location + manual), operational-update form |
+| 9 | Admin Attendance Board and History | **Done** — required indexes + denormalised history fields on `memberResponses` + per-event attendance board (capacity totals, attending grouped by stop, guest groupings) + cross-event history with search |
+| 10 | Security, Testing, and Release | **Done (testing layer)** — privacy-hardened Firestore rules with canonical link-id enforcement; **49** Firestore-rule integration tests; **30** backend unit tests; **17** end-to-end tests against the full emulator stack; **9** Flutter widget tests; App Check enforcement; centralised payload validation; structured failure handling with PII redaction; SLOs + runbooks; Dependabot + `npm audit` gate; CI runs all of the above. Stage / prod project provisioning + signing secrets remain — see `docs/release.md`. |
 
 For the per-item production-readiness state and per-area scorecard see
 [`docs/production-readiness.md`](docs/production-readiness.md).

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:maps_launcher/maps_launcher.dart';
 
+import '../../core/auth/auth_state.dart';
 import '../../data/models/event.dart';
 import '../../data/models/route_stop.dart';
 import '../../data/repositories/events_repository.dart';
@@ -17,8 +19,31 @@ class EventDetailScreen extends ConsumerWidget {
     final eventAsync = ref.watch(_eventProvider(eventId));
     final stopsAsync = ref.watch(_stopsProvider(eventId));
 
+    final roles = ref.watch(currentUserRolesProvider).asData?.value;
     return Scaffold(
-      appBar: AppBar(title: const Text('Event')),
+      appBar: AppBar(
+        title: const Text('Event'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: 'Back to events',
+          onPressed: () => context.go('/'),
+        ),
+        actions: [
+          if (roles?.isAdmin == true)
+            IconButton(
+              icon: const Icon(Icons.dashboard_outlined),
+              tooltip: 'Attendance board',
+              onPressed: () =>
+                  context.go('/admin/events/$eventId/board'),
+            ),
+          if (roles?.isAdmin == true)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: 'Edit event',
+              onPressed: () => context.go('/admin/events/$eventId'),
+            ),
+        ],
+      ),
       body: eventAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('$e')),
@@ -68,26 +93,13 @@ class EventDetailScreen extends ConsumerWidget {
                 const SizedBox(height: 24),
               ],
               FilledButton.tonal(
-                onPressed: () {
-                  // TODO(milestone-5): open the linked-member attendance form.
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Attendance form not yet implemented.'),
-                    ),
-                  );
-                },
+                onPressed: () =>
+                    context.go('/events/$eventId/attendance'),
                 child: const Text('Confirm attendance'),
               ),
               const SizedBox(height: 12),
               OutlinedButton(
-                onPressed: () {
-                  // TODO(milestone-6): open the guest request form.
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Guest request not yet implemented.'),
-                    ),
-                  );
-                },
+                onPressed: () => context.go('/events/$eventId/guest'),
                 child: const Text('Request guest seats'),
               ),
             ],
