@@ -5,6 +5,7 @@ import { isCanonicalLinkId } from '../utils/links';
 import { validate, Schema } from '../utils/validation';
 import { callableDefaults } from '../utils/options';
 import { reportFailure } from '../utils/errors';
+import { enforceRateLimit } from '../utils/rateLimit';
 import { authAdmin, db, serverTimestamp } from '../utils/firestore';
 
 interface SetUserRoleInput extends Record<string, unknown> {
@@ -162,6 +163,29 @@ const requestMemberLinkSchema: Schema = {
  * privileges. The created link is always `pending` and must be approved
  * by an admin via `approveMemberUserLink` before the user gains read
  * access to that member.
+ *
+ * Privacy + abuse-resistance posture (deliberate trade-offs):
+ *
+ * - **Indistinguishable outcomes.** The caller sees the same generic
+ *   response whether the member number is unknown, matches an inactive
+ *   record, matches an already-rejected link, or produces a fresh
+ *   pending link. This closes an enumeration oracle: otherwise a
+ *   signed-in attacker could walk the member-number space and infer
+ *   which numbers correspond to real, active supporters.
+ * - **Per-uid rate limit.** A Firestore-backed fixed-window counter
+ *   throttles lookups to a small number per window per user. This
+ *   makes a meaningful enumeration attack impractical even under the
+ *   generic-response regime.
+ * - **Sticky rejections.** Once an admin rejects a link, the callable
+ *   refuses to flip it back to `pending`. The user receives the same
+ *   generic "submitted" response; only an admin can re-open the link.
+ *   This preserves the meaning of a rejection as an explicit admin
+ *   decision rather than a transient state.
+ * - **Always audit-log.** Every invocation writes an audit entry
+ *   describing the *outcome class* (created / updated-pending / already-
+ *   active / sticky-reject / unknown-number / member-inactive) without
+ *   logging the raw member number, so admins can investigate abuse
+ *   without the log itself becoming a PII store.
  */
 export const requestMemberLinkByNumber = onCall<RequestMemberLinkInput>(
   callableDefaults,
@@ -171,71 +195,111 @@ export const requestMemberLinkByNumber = onCall<RequestMemberLinkInput>(
       req.data,
       requestMemberLinkSchema,
     );
+
+    // Per-uid rate limit. Keep the window short and the cap low — the
+    // legitimate workflow is "user types their number once at signup",
+    // so anything beyond a handful of calls per hour is almost certainly
+    // enumeration or a client bug.
+    await enforceRateLimit({
+      key: `requestMemberLinkByNumber:${uid}`,
+      max: 10,
+      windowMs: 60 * 60 * 1000,
+    });
+
+    type Outcome =
+      | 'created'
+      | 'updated_pending'
+      | 'already_active'
+      | 'sticky_rejected'
+      | 'unknown_number'
+      | 'member_inactive';
+
+    let outcome: Outcome;
+    let linkId: string | null = null;
+
     try {
       const membersSnap = await db()
         .collection('members')
         .where('memberNumber', '==', data.memberNumber)
         .limit(1)
         .get();
+
       if (membersSnap.empty) {
-        throw new HttpsError(
-          'not-found',
-          'No supporter with that member number was found. Please ask an admin to add you to the supporters list first.',
-        );
-      }
-      const memberDoc = membersSnap.docs[0];
-      const memberId = memberDoc.id;
-      const memberStatus =
-        (memberDoc.data() as { status?: string }).status ?? 'active';
-      if (memberStatus !== 'active') {
-        throw new HttpsError(
-          'failed-precondition',
-          'That supporter record is not active.',
-        );
-      }
-      const linkId = `${uid}_${memberId}`;
-      const linkRef = db().collection('memberUserLinks').doc(linkId);
-      await db().runTransaction(async (tx) => {
-        const snap = await tx.get(linkRef);
-        if (snap.exists) {
-          const linkData = snap.data() as { status?: string };
-          if (linkData.status === 'active') {
-            // Idempotent: re-requesting an already-active link is a no-op.
-            return;
-          }
-          if (linkData.status === 'pending') {
-            // Refresh the relationship + timestamp.
-            tx.update(linkRef, {
+        outcome = 'unknown_number';
+      } else {
+        const memberDoc = membersSnap.docs[0];
+        const memberId = memberDoc.id;
+        const memberStatus =
+          (memberDoc.data() as { status?: string }).status ?? 'active';
+
+        if (memberStatus !== 'active') {
+          outcome = 'member_inactive';
+        } else {
+          linkId = `${uid}_${memberId}`;
+          const linkRef = db().collection('memberUserLinks').doc(linkId);
+          outcome = await db().runTransaction(async (tx): Promise<Outcome> => {
+            const snap = await tx.get(linkRef);
+            if (snap.exists) {
+              const linkData = snap.data() as { status?: string };
+              if (linkData.status === 'active') {
+                return 'already_active';
+              }
+              if (linkData.status === 'rejected') {
+                // Sticky: a rejection is an explicit admin decision. The user
+                // must contact an admin to re-open. We intentionally do NOT
+                // mutate the doc so the rejection metadata is preserved.
+                return 'sticky_rejected';
+              }
+              if (linkData.status === 'pending') {
+                tx.update(linkRef, {
+                  relationshipToUser: data.relationshipToUser,
+                  updatedAt: serverTimestamp(),
+                });
+                return 'updated_pending';
+              }
+              // Any other status (e.g. "inactive") — re-open as pending.
+              tx.update(linkRef, {
+                status: 'pending',
+                relationshipToUser: data.relationshipToUser,
+                requestedDuringSignup: true,
+                approvedByAdminId: null,
+                approvedAt: null,
+                updatedAt: serverTimestamp(),
+              });
+              return 'updated_pending';
+            }
+            tx.set(linkRef, {
+              userId: uid,
+              memberId,
+              status: 'pending',
               relationshipToUser: data.relationshipToUser,
+              requestedDuringSignup: true,
+              createdByAdminId: null,
+              approvedByAdminId: null,
+              approvedAt: null,
+              createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
             });
-            return;
-          }
-          // For inactive / rejected, re-open as pending.
-          tx.update(linkRef, {
-            status: 'pending',
-            relationshipToUser: data.relationshipToUser,
-            requestedDuringSignup: true,
-            approvedByAdminId: null,
-            approvedAt: null,
-            updatedAt: serverTimestamp(),
+            return 'created';
           });
-          return;
         }
-        tx.set(linkRef, {
-          userId: uid,
-          memberId,
-          status: 'pending',
-          relationshipToUser: data.relationshipToUser,
-          requestedDuringSignup: true,
-          createdByAdminId: null,
-          approvedByAdminId: null,
-          approvedAt: null,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
+      }
+
+      // Always audit-log, but never log the raw member number — we log the
+      // outcome class so operators can detect enumeration patterns (many
+      // `unknown_number` entries from one uid) without the audit log itself
+      // becoming a privacy risk.
+      await writeAuditLog({
+        actorUserId: uid,
+        action: 'request_member_link_by_number',
+        entityType: 'memberUserLink',
+        entityPath: linkId ? `memberUserLinks/${linkId}` : 'memberUserLinks',
+        after: { outcome },
       });
-      return { ok: true, linkId };
+
+      // Indistinguishable response across all outcomes. The client's UI
+      // says "If that member number matched, an admin will review it."
+      return { ok: true };
     } catch (err) {
       await reportFailure(
         {
@@ -243,7 +307,6 @@ export const requestMemberLinkByNumber = onCall<RequestMemberLinkInput>(
           action: 'request_member_link_by_number',
           entityType: 'memberUserLink',
           entityPath: 'memberUserLinks',
-          extra: { memberNumber: '[REDACTED]' },
         },
         err,
       );
@@ -259,9 +322,27 @@ export const rejectMemberUserLink = onCall<MemberLinkDecisionInput>(
     const data = validate<MemberLinkDecisionInput>(req.data, memberLinkDecisionSchema);
     try {
       const ref = db().collection('memberUserLinks').doc(data.linkId);
+      // Enforce the same invariants as approveMemberUserLink: the link
+      // must exist, be pending, and use the canonical id. Rejecting a
+      // non-pending link (already active / already rejected) should be a
+      // conflict, not a silent state flip.
       await db().runTransaction(async (tx) => {
         const snap = await tx.get(ref);
         if (!snap.exists) throw new HttpsError('not-found', 'Link not found.');
+        const linkData = snap.data() as {
+          status: string;
+          userId: string;
+          memberId: string;
+        };
+        if (linkData.status !== 'pending') {
+          throw new HttpsError('failed-precondition', 'Link is not pending.');
+        }
+        if (!isCanonicalLinkId(data.linkId, linkData.userId, linkData.memberId)) {
+          throw new HttpsError(
+            'failed-precondition',
+            'Link id does not match the canonical `${userId}_${memberId}` format.',
+          );
+        }
         tx.update(ref, {
           status: 'rejected',
           approvedByAdminId: uid,
