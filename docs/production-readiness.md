@@ -66,8 +66,9 @@ review. P0 must be **Done** before the first prod deploy.
         end-to-end suites.
 - [x] End-to-end integration tests for: login + profile creation,
       response submission, guest request decision, helper operational
-      update, member-link-by-number lookup.
-      ([`e2e/`](../e2e/) — 17 tests across 5 suites against the full
+      update, member-link-by-number lookup, admin
+      `overrideMemberResponse` (after-cutoff path).
+      ([`e2e/`](../e2e/) — 24 tests across 6 suites against the full
       Firebase emulator stack.)
 
 ### Operational readiness
