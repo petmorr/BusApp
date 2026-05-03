@@ -37,3 +37,7 @@ export {
   rejectMemberUserLink,
   requestMemberLinkByNumber,
 } from './callables/admin';
+
+export {
+  overrideMemberResponse,
+} from './callables/memberResponseOverride';
