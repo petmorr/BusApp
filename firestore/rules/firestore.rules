@@ -94,11 +94,15 @@ service cloud.firestore {
     // -------- members --------
     //
     // Privacy posture: a member document is readable only by admins or by a
-    // user who already has a memberUserLink doc to that member. Listing the
-    // full member directory is admin-only. See docs/privacy.md.
+    // user whose memberUserLink to that member is in `active` status.
+    // Pending/rejected links do NOT grant read access to the member's PII
+    // (names, phone numbers, general notes) — otherwise a user could
+    // request a pending link to any memberId and immediately read that
+    // supporter's record before an admin approves it. Listing the full
+    // member directory is admin-only. See docs/privacy.md.
 
     match /members/{memberId} {
-      allow get: if isAdmin() || userHasLinkDocFor(memberId);
+      allow get: if isAdmin() || userIsActivelyLinkedToMember(memberId);
       allow list: if isAdmin();
       allow create, update, delete: if isAdmin();
     }
@@ -150,11 +154,23 @@ service cloud.firestore {
       );
 
       // -------- stops --------
+      //
+      // Helpers may only update a narrow allow-list of day-of operational
+      // fields (notes + scheduledAt + isActive). Stop name, type, sequence,
+      // and location are admin-only because changing them silently rewrites
+      // the route semantics that attendance and capacity calculations
+      // depend on. Without this restriction, a compromised helper account
+      // could, e.g., flip a return_dropoff into an event_pickup or relocate
+      // a pickup point.
       match /stops/{stopId} {
         allow read: if isAdmin()
           || (isSignedIn() && get(/databases/$(database)/documents/events/$(eventId)).data.status != 'draft');
         allow create, delete: if isAdmin();
-        allow update: if isAdmin() || (isHelper() && isAssignedHelper(eventId));
+        allow update: if isAdmin() || (
+          isHelper() && isAssignedHelper(eventId)
+          && request.resource.data.diff(resource.data).changedKeys()
+               .hasOnly(['notes', 'scheduledAt', 'isActive', 'updatedAt', 'updatedByUserId'])
+        );
       }
 
       // -------- helpers --------
@@ -173,8 +189,11 @@ service cloud.firestore {
 
       // -------- memberResponses --------
       match /memberResponses/{memberId} {
+        // Reading a response doc reveals memberDisplayName + generalNotes,
+        // so the link must be `active` (not merely exist) — consistent
+        // with the members/{memberId} read gate above.
         allow read: if isAdmin()
-          || (isSignedIn() && userHasLinkDocFor(memberId));
+          || (isSignedIn() && userIsActivelyLinkedToMember(memberId));
 
         // Users may create/update their own member's response, before cutoff.
         // Cloud Functions perform the deeper validation (cutoff, stop type
@@ -231,6 +250,23 @@ service cloud.firestore {
     // -------- audit logs --------
 
     match /auditLogs/{auditLogId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // -------- rate limits --------
+    // Rate-limit counters are maintained by Cloud Functions via the
+    // `enforceRateLimit` helper. Clients have no legitimate reason to
+    // read or write these docs.
+    match /rateLimits/{rateLimitId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // -------- idempotency keys --------
+    // Idempotency records are written by Cloud Functions via
+    // `withIdempotency`. Clients must not read or write them.
+    match /idempotencyKeys/{idempotencyKeyId} {
       allow read: if isAdmin();
       allow write: if false;
     }
