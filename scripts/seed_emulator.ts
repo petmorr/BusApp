@@ -9,10 +9,22 @@
  *   FIREBASE_AUTH_EMULATOR_HOST=localhost:9099 \
  *     npm run seed-emulator
  *
- * The `FIRESTORE_EMULATOR_HOST` environment variable is honoured by the
- * firebase-admin SDK and routes all writes to the emulator. We refuse to
- * run if it is not set, so this script can never accidentally write into
- * a real Firebase project.
+ * Safety guards — the script aborts UNLESS **all** of the following hold:
+ *
+ *   1. `FIRESTORE_EMULATOR_HOST` is set so Firestore writes target the
+ *      local emulator.
+ *   2. `FIREBASE_AUTH_EMULATOR_HOST` is set so the seeded admin user and
+ *      its `{ admin: true }` custom claim are created in the Auth
+ *      emulator — without this guard an operator with real Firebase
+ *      credentials (ADC) could accidentally create a production admin
+ *      user because `auth.createUser` / `setCustomUserClaims` fall back
+ *      to the real Auth service when the emulator env var is unset.
+ *   3. The resolved project id starts with `demo-` OR matches the
+ *      allow-list below. Firebase documents that project ids beginning
+ *      with `demo-` are reserved for local/emulator use and never
+ *      correspond to real Firebase projects. This is defence-in-depth
+ *      against a stray `GCLOUD_PROJECT=supporters-bus-prod` in the
+ *      operator's shell.
  */
 
 import { readFile } from 'node:fs/promises';
@@ -80,17 +92,52 @@ interface StopRow {
   notes?: string;
 }
 
-async function main(): Promise<void> {
+// Project ids that are explicitly permitted in addition to the `demo-*`
+// convention. Keep this list in lockstep with `.firebaserc`. The
+// `supporters-bus-e2e` project is an emulator-only project used by the
+// e2e harness; it must never be provisioned against real GCP.
+const ALLOWED_PROJECT_IDS = new Set<string>([
+  'supporters-bus-e2e',
+]);
+
+function assertEmulatorEnvironment(projectId: string): void {
+  const missing: string[] = [];
   if (!process.env.FIRESTORE_EMULATOR_HOST) {
+    missing.push('FIRESTORE_EMULATOR_HOST');
+  }
+  if (!process.env.FIREBASE_AUTH_EMULATOR_HOST) {
+    missing.push('FIREBASE_AUTH_EMULATOR_HOST');
+  }
+  if (missing.length > 0) {
     console.error(
-      'FIRESTORE_EMULATOR_HOST is not set. Refusing to run against a real ' +
-        'Firebase project.',
+      `Refusing to run: the following emulator env var(s) are not set: ` +
+        `${missing.join(', ')}.\n\n` +
+        `This script writes Firestore documents AND creates an Auth user ` +
+        `with the { admin: true } custom claim. If either emulator host is ` +
+        `unset, the firebase-admin SDK will fall back to the real Firebase ` +
+        `backend and the corresponding writes will hit your live project.`,
     );
     process.exit(1);
   }
+  const isDemoProject = projectId.startsWith('demo-');
+  if (!isDemoProject && !ALLOWED_PROJECT_IDS.has(projectId)) {
+    console.error(
+      `Refusing to run: project id "${projectId}" is not a demo-* project ` +
+        `and is not on the seed-emulator allow-list (${[...ALLOWED_PROJECT_IDS].join(', ') || '(empty)'}).\n\n` +
+        `Set GCLOUD_PROJECT to a project id that starts with "demo-" (e.g. ` +
+        `"demo-supporters-bus"), or add the project id to ALLOWED_PROJECT_IDS ` +
+        `if it is a real emulator-only project.`,
+    );
+    process.exit(1);
+  }
+}
+
+async function main(): Promise<void> {
+  const projectId = process.env.GCLOUD_PROJECT ?? 'demo-supporters-bus';
+  assertEmulatorEnvironment(projectId);
 
   if (getApps().length === 0) {
-    initializeApp({ projectId: process.env.GCLOUD_PROJECT ?? 'demo-supporters-bus' });
+    initializeApp({ projectId });
   }
   const db = getFirestore();
   const auth = getAuth();
