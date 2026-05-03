@@ -528,7 +528,7 @@ class _OverrideDialogState extends ConsumerState<_OverrideDialog> {
           );
       if (mounted) Navigator.of(context).pop();
     } catch (err) {
-      setState(() => _error = '$err');
+      if (mounted) setState(() => _error = '$err');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
