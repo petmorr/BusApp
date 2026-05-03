@@ -123,4 +123,50 @@ class MembersRepository {
         .snapshots()
         .map((s) => s.docs.map(MemberUserLink.fromDoc).toList());
   }
+
+  /// All `active` member-user links across the directory. Admin-only.
+  /// Powers the attendance board "Still to confirm" panel: the universe
+  /// of members admins expect to see a response for is the set of members
+  /// covered by an active link.
+  Stream<List<MemberUserLink>> watchAllActiveLinks() {
+    return _db
+        .collection('memberUserLinks')
+        .where('status', isEqualTo: LinkStatus.active.name)
+        .snapshots()
+        .map((s) => s.docs.map(MemberUserLink.fromDoc).toList());
+  }
+
+  /// Admin-only: directly create an active link from a user to a member.
+  /// The Firestore rules accept this as long as the document id matches
+  /// the canonical `${userId}_${memberId}` shape.
+  Future<void> createAdminLink({
+    required String adminUserId,
+    required String userId,
+    required String memberId,
+    Relationship relationship = Relationship.other,
+  }) async {
+    final id = MemberUserLink.idFor(userId, memberId);
+    await _db.collection('memberUserLinks').doc(id).set({
+      'userId': userId,
+      'memberId': memberId,
+      'status': LinkStatus.active.name,
+      'relationshipToUser': relationship.name,
+      'requestedDuringSignup': false,
+      'createdByAdminId': adminUserId,
+      'approvedByAdminId': adminUserId,
+      'approvedAt': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Admin-only: flip an existing link to `inactive`. Used when a user
+  /// changes their phone number or no longer represents that member.
+  Future<void> deactivateLink(String linkId, String adminUserId) async {
+    await _db.collection('memberUserLinks').doc(linkId).update({
+      'status': LinkStatus.inactive.name,
+      'approvedByAdminId': adminUserId,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
 }

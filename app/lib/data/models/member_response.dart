@@ -23,6 +23,8 @@ class MemberResponse {
     required this.respondingUserId,
     required this.status,
     required this.isAdminOverride,
+    required this.memberDisplayName,
+    this.overriddenByAdminId,
     this.outboundPickupStopId,
     this.returnDropoffStopId,
     this.generalNotes,
@@ -35,6 +37,9 @@ class MemberResponse {
       respondingUserId: data['respondingUserId'] as String? ?? '',
       status: MemberResponseStatus.fromWire(data['status'] as String?),
       isAdminOverride: data['isAdminOverride'] as bool? ?? false,
+      overriddenByAdminId: data['overriddenByAdminId'] as String?,
+      memberDisplayName:
+          data['memberDisplayName'] as String? ?? data['memberId'] as String? ?? doc.id,
       outboundPickupStopId: data['outboundPickupStopId'] as String?,
       returnDropoffStopId: data['returnDropoffStopId'] as String?,
       generalNotes: data['generalNotes'] as String?,
@@ -45,6 +50,8 @@ class MemberResponse {
   final String respondingUserId;
   final MemberResponseStatus status;
   final bool isAdminOverride;
+  final String? overriddenByAdminId;
+  final String memberDisplayName;
   final String? outboundPickupStopId;
   final String? returnDropoffStopId;
   final String? generalNotes;

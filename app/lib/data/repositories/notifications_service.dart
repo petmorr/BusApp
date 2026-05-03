@@ -135,4 +135,33 @@ class NotificationsService {
       'notifyAttending': notifyAttending,
     });
   }
+
+  /// Admin override of a member's attendance response. Used when a member
+  /// confirms outside the app, or after the response cutoff has passed.
+  /// Server-side, this writes the response with `isAdminOverride: true`
+  /// and `overriddenByAdminId: <admin uid>`, plus an audit-log entry.
+  Future<void> overrideMemberResponse({
+    required String eventId,
+    required String memberId,
+    required String status,
+    String? outboundPickupStopId,
+    String? returnDropoffStopId,
+    String? generalNotes,
+  }) async {
+    final payload = <String, dynamic>{
+      'eventId': eventId,
+      'memberId': memberId,
+      'status': status,
+    };
+    if (outboundPickupStopId != null) {
+      payload['outboundPickupStopId'] = outboundPickupStopId;
+    }
+    if (returnDropoffStopId != null) {
+      payload['returnDropoffStopId'] = returnDropoffStopId;
+    }
+    if (generalNotes != null) {
+      payload['generalNotes'] = generalNotes;
+    }
+    await _functions.httpsCallable('overrideMemberResponse').call(payload);
+  }
 }
