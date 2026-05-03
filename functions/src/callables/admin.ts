@@ -1,5 +1,5 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
-import { requireAdmin } from '../utils/auth';
+import { requireAdmin, requireAuth } from '../utils/auth';
 import { writeAuditLog } from '../utils/audit';
 import { isCanonicalLinkId } from '../utils/links';
 import { validate, Schema } from '../utils/validation';
@@ -133,6 +133,117 @@ export const approveMemberUserLink = onCall<MemberLinkDecisionInput>(
           action: 'approve_member_user_link',
           entityType: 'memberUserLink',
           entityPath: `memberUserLinks/${data.linkId}`,
+        },
+        err,
+      );
+      throw err;
+    }
+  },
+);
+
+interface RequestMemberLinkInput extends Record<string, unknown> {
+  memberNumber: string;
+  relationshipToUser: 'self' | 'child' | 'dependent' | 'other';
+}
+
+const requestMemberLinkSchema: Schema = {
+  memberNumber: { type: 'string', minLength: 1, maxLength: 50 },
+  relationshipToUser: {
+    type: 'string',
+    enum: ['self', 'child', 'dependent', 'other'] as const,
+  },
+};
+
+/**
+ * Lets a signed-in user request a *pending* link to a supporter without
+ * needing to read the (admin-only) members directory client-side. The
+ * Firestore rules deliberately deny `list` on members to non-admins for
+ * privacy reasons, so the lookup-by-number is performed here with admin
+ * privileges. The created link is always `pending` and must be approved
+ * by an admin via `approveMemberUserLink` before the user gains read
+ * access to that member.
+ */
+export const requestMemberLinkByNumber = onCall<RequestMemberLinkInput>(
+  callableDefaults,
+  async (req) => {
+    const { uid } = requireAuth(req);
+    const data = validate<RequestMemberLinkInput>(
+      req.data,
+      requestMemberLinkSchema,
+    );
+    try {
+      const membersSnap = await db()
+        .collection('members')
+        .where('memberNumber', '==', data.memberNumber)
+        .limit(1)
+        .get();
+      if (membersSnap.empty) {
+        throw new HttpsError(
+          'not-found',
+          'No supporter with that member number was found. Please ask an admin to add you to the supporters list first.',
+        );
+      }
+      const memberDoc = membersSnap.docs[0];
+      const memberId = memberDoc.id;
+      const memberStatus =
+        (memberDoc.data() as { status?: string }).status ?? 'active';
+      if (memberStatus !== 'active') {
+        throw new HttpsError(
+          'failed-precondition',
+          'That supporter record is not active.',
+        );
+      }
+      const linkId = `${uid}_${memberId}`;
+      const linkRef = db().collection('memberUserLinks').doc(linkId);
+      await db().runTransaction(async (tx) => {
+        const snap = await tx.get(linkRef);
+        if (snap.exists) {
+          const linkData = snap.data() as { status?: string };
+          if (linkData.status === 'active') {
+            // Idempotent: re-requesting an already-active link is a no-op.
+            return;
+          }
+          if (linkData.status === 'pending') {
+            // Refresh the relationship + timestamp.
+            tx.update(linkRef, {
+              relationshipToUser: data.relationshipToUser,
+              updatedAt: serverTimestamp(),
+            });
+            return;
+          }
+          // For inactive / rejected, re-open as pending.
+          tx.update(linkRef, {
+            status: 'pending',
+            relationshipToUser: data.relationshipToUser,
+            requestedDuringSignup: true,
+            approvedByAdminId: null,
+            approvedAt: null,
+            updatedAt: serverTimestamp(),
+          });
+          return;
+        }
+        tx.set(linkRef, {
+          userId: uid,
+          memberId,
+          status: 'pending',
+          relationshipToUser: data.relationshipToUser,
+          requestedDuringSignup: true,
+          createdByAdminId: null,
+          approvedByAdminId: null,
+          approvedAt: null,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      });
+      return { ok: true, linkId };
+    } catch (err) {
+      await reportFailure(
+        {
+          actorUserId: uid,
+          action: 'request_member_link_by_number',
+          entityType: 'memberUserLink',
+          entityPath: 'memberUserLinks',
+          extra: { memberNumber: '[REDACTED]' },
         },
         err,
       );

@@ -9,6 +9,10 @@ import {
   serverTimestamp,
   updateDoc,
   deleteDoc,
+  collectionGroup,
+  query,
+  where,
+  getDocs,
 } from 'firebase/firestore';
 
 import { authedDb, makeTestEnv } from './helpers';
@@ -131,6 +135,30 @@ describe('event helper updates', () => {
         notes: 'unauthorised',
         updatedAt: serverTimestamp(),
       }),
+    );
+  });
+
+  it('a helper CAN run the collection-group query for their own helper docs', async () => {
+    const db = authedDb(env, { uid: helperA, helper: true }).firestore();
+    await assertSucceeds(
+      getDocs(
+        query(
+          collectionGroup(db, 'helpers'),
+          where('userId', '==', helperA),
+        ),
+      ),
+    );
+  });
+
+  it("a helper CANNOT enumerate someone else's helper docs via collection group", async () => {
+    const db = authedDb(env, { uid: helperA, helper: true }).firestore();
+    await assertFails(
+      getDocs(
+        query(
+          collectionGroup(db, 'helpers'),
+          where('userId', '==', helperB),
+        ),
+      ),
     );
   });
 });

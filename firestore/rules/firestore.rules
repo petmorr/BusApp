@@ -158,8 +158,16 @@ service cloud.firestore {
       }
 
       // -------- helpers --------
+      // Read access uses `resource.data.userId == request.auth.uid` (rather
+      // than `isSelf(userId)`) so the helper dashboard can run a collection-
+      // group query `.where('userId', '==', uid)` to enumerate the events the
+      // signed-in user is assigned to. The Firestore rules engine can
+      // statically prove that filter satisfies the rule, so the query is
+      // accepted. Direct `get()`s still work because the assignEventHelper
+      // callable writes the doc with id == data.userId.
       match /helpers/{userId} {
-        allow read: if isAdmin() || isSelf(userId);
+        allow read: if isAdmin()
+          || (isSignedIn() && resource.data.userId == request.auth.uid);
         allow create, update, delete: if isAdmin();
       }
 
@@ -224,6 +232,20 @@ service cloud.firestore {
 
     match /auditLogs/{auditLogId} {
       allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // -------- collection-group: helpers --------
+    // The helpers documents live at `events/{eventId}/helpers/{userId}`,
+    // which the rule above gates correctly for direct reads. Collection-
+    // group queries (`db.collectionGroup('helpers')`) however are evaluated
+    // against this top-level recursive match. Reads are still scoped to
+    // the signed-in user's own helper docs, matching the per-event rule's
+    // intent. Writes always go through the admin-only `assignEventHelper`
+    // / `unassignEventHelper` callables.
+    match /{path=**}/helpers/{userId} {
+      allow read: if isAdmin()
+        || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow write: if false;
     }
   }

@@ -46,6 +46,12 @@ app/android/local.properties
 app/android/app/google-services.json
 app/android/key.properties
 app/android/app/upload-keystore.jks
+# Flutter auto-generates these from the plugin set on `flutter pub get`,
+# so they should not live in source control.
+app/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+app/ios/Runner/GeneratedPluginRegistrant.h
+app/ios/Runner/GeneratedPluginRegistrant.m
+app/pubspec.lock
 
 # Secrets
 *.env

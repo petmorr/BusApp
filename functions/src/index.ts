@@ -35,4 +35,5 @@ export {
   setUserRole,
   approveMemberUserLink,
   rejectMemberUserLink,
+  requestMemberLinkByNumber,
 } from './callables/admin';
