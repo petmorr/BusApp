@@ -14,7 +14,7 @@ full deliverables/acceptance criteria).
 | 7 | Capacity, Reminders, and Notifications | Done — capacity helper, Firestore triggers, capacity alerts, attendance / pending-guest reminder callables, FCM fan-out with idempotency keys + admin reminders tab to invoke them, plus operational-update form |
 | 8 | Helper Operations and Parked-Bus Location | Done — `updateParkedBusLocation`, helper assign/unassign, operational update callables (App Check enforced, schema validated, idempotent) + helper UI: assigned-events list (collection-group query), parked-bus pin form (use-my-location + manual coordinates), operational update form |
 | 9 | Admin Attendance Board and History | Done — required indexes + denormalised history fields on `memberResponses` + per-event attendance board (capacity totals, attending grouped by stop, not-attending list, guest groupings) + cross-event history with member/event search |
-| 10 | Security, Testing, and Release | Done (testing layer) — Firestore rules with role-based access + canonical link-id enforcement, **49** Firestore-rule integration tests, **30** backend unit tests, **17** end-to-end tests across the full Firebase emulator stack, **9** Flutter widget tests, App Check enforcement, centralised payload validation, structured failure handling, PII redaction in audit log, SLOs + runbooks, Dependabot + `npm audit` gate, GitHub Actions CI running five jobs. Stage / prod project provisioning + signing secrets tracked in `docs/release.md` and `docs/production-readiness.md` |
+| 10 | Security, Testing, and Release | Done (testing layer) — Firestore rules with role-based access + canonical link-id enforcement, **65** Firestore-rule integration tests, **50** backend unit tests, **20** end-to-end tests across the full Firebase emulator stack, **9** Flutter widget tests, App Check enforcement (with project-id allow-listed bypass for emulators), centralised payload validation, structured failure handling, PII redaction in audit log, per-uid rate limiting on user-facing lookup callables, SLOs + runbooks, Dependabot + `npm audit` gate, GitHub Actions CI running five jobs. Stage / prod project provisioning + signing secrets tracked in `docs/release.md` and `docs/production-readiness.md` |
 
 ## Test inventory
 
@@ -24,6 +24,12 @@ Backend unit tests (`functions/test/`):
 - `links.test.ts` — 6 tests (`memberUserLinks` id format invariants).
 - `validation.test.ts` — 10 tests (callable payload validator).
 - `redaction.test.ts` — 9 tests (PII redaction policy).
+- `errors.test.ts` — 9 tests (error classification matrix + audit-log
+  redaction policy for non-`HttpsError` messages).
+- `options.test.ts` — 7 tests (App Check bypass is gated on a
+  project-id allow-list; env var alone is not enough).
+- `rateLimit.test.ts` — 4 tests (per-key fixed-window counter,
+  resource-exhausted on overflow, window reset, per-key isolation).
 
 Firestore-rule integration tests (`firestore/tests/`, run against the
 Firestore emulator):
@@ -34,6 +40,9 @@ Firestore emulator):
   coverage for the helper-events query).
 - `admin.test.ts` — 15 tests.
 - `denyPaths.test.ts` — 11 tests (P0 deny-path coverage matrix).
+- `hardening.test.ts` — 16 tests (active-link requirement for member
+  + response reads, helper stop-field allow-list, `rateLimits` and
+  `idempotencyKeys` client lockdown).
 
 End-to-end tests (`e2e/`, run against the full Auth + Firestore +
 Functions emulator stack):
@@ -49,9 +58,10 @@ Functions emulator stack):
 - `helper_operational_update.test.ts` — 4 tests (assigned helper pin
   + lat/lng redaction in audit; unassigned helper denied; admin send
   operational update; out-of-range latitude rejected by validator).
-- `request_member_link_by_number.test.ts` — 3 tests (callable creates
-  pending self-link; unknown member number rejected; idempotent replay
-  on already-active link).
+- `request_member_link_by_number.test.ts` — 6 tests (creates pending
+  self-link; unknown + inactive return the same generic response;
+  idempotent replay on already-active; sticky rejection is preserved;
+  every invocation writes an outcome-tagged audit log).
 
 Flutter app (`app/test/`):
 
@@ -63,8 +73,8 @@ Flutter app (`app/test/`):
   labelling + tap target, FilledButton/OutlinedButton row tap targets,
   admin/helper menu Card → ListTile titles).
 
-**Totals: 30 backend unit tests + 49 Firestore-rule integration tests +
-17 end-to-end tests + 9 Flutter widget tests = 105 tests.**
+**Totals: 50 backend unit tests + 65 Firestore-rule integration tests +
+20 end-to-end tests + 9 Flutter widget tests = 144 tests.**
 
 ## Production readiness
 
