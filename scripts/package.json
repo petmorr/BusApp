@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "import-members": "tsx import_members.ts",
+    "seed-emulator": "tsx seed_emulator.ts",
     "lint": "eslint --ext .ts ."
   },
   "dependencies": {

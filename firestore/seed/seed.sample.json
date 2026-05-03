@@ -1,0 +1,93 @@
+{
+  "members": {
+    "m1": {
+      "firstName": "John",
+      "lastName": "Smith",
+      "displayName": "John Smith",
+      "primaryPhoneE164": "+447700900123",
+      "memberNumber": "001",
+      "status": "active",
+      "generalNotes": ""
+    },
+    "m2": {
+      "firstName": "Mary",
+      "lastName": "Doe",
+      "displayName": "Mary Doe",
+      "primaryPhoneE164": "+447700900456",
+      "memberNumber": "002",
+      "status": "active",
+      "generalNotes": ""
+    },
+    "m3": {
+      "firstName": "Patrick",
+      "lastName": "O'Brien",
+      "displayName": "Patrick O'Brien",
+      "primaryPhoneE164": "+447700900789",
+      "memberNumber": "003",
+      "status": "active",
+      "generalNotes": "Wheelchair access required"
+    }
+  },
+  "events": {
+    "e1": {
+      "title": "Home vs Newcastle",
+      "eventDate": "2026-08-12T14:00:00.000Z",
+      "status": "open",
+      "capacityMax": 50,
+      "capacityNearThresholdPercent": 90,
+      "capacityStatus": "under",
+      "pendingGuestRisk": false,
+      "destinationName": "St. James' Park",
+      "generalNotes": "Bus departs from the club car park.",
+      "lastCapacityAlertSentAt": null,
+      "stops": {
+        "s1": {
+          "name": "Club car park",
+          "type": "outbound_pickup",
+          "sequence": 0,
+          "scheduledAt": "2026-08-12T11:00:00.000Z",
+          "isActive": true,
+          "location": { "lat": 51.5074, "lng": -0.1278, "address": "Main road" }
+        },
+        "s2": {
+          "name": "Train station",
+          "type": "outbound_pickup",
+          "sequence": 1,
+          "scheduledAt": "2026-08-12T11:15:00.000Z",
+          "isActive": true,
+          "location": { "lat": 51.5085, "lng": -0.1290 }
+        },
+        "s3": {
+          "name": "Stadium drop-off",
+          "type": "event_dropoff",
+          "sequence": 2,
+          "scheduledAt": "2026-08-12T13:30:00.000Z",
+          "isActive": true
+        },
+        "s4": {
+          "name": "Stadium pickup (after match)",
+          "type": "event_pickup",
+          "sequence": 3,
+          "scheduledAt": "2026-08-12T17:00:00.000Z",
+          "isActive": true
+        },
+        "s5": {
+          "name": "Train station",
+          "type": "return_dropoff",
+          "sequence": 4,
+          "scheduledAt": "2026-08-12T19:30:00.000Z",
+          "isActive": true,
+          "location": { "lat": 51.5085, "lng": -0.1290 }
+        },
+        "s6": {
+          "name": "Club car park",
+          "type": "return_dropoff",
+          "sequence": 5,
+          "scheduledAt": "2026-08-12T19:45:00.000Z",
+          "isActive": true,
+          "location": { "lat": 51.5074, "lng": -0.1278 }
+        }
+      }
+    }
+  }
+}
