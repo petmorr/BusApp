@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -46,7 +49,10 @@ class NotificationsService {
   }
 
   Future<void> _writeToken(String uid, String token, String platform) async {
-    final tokenId = token.hashCode.toRadixString(16);
+    // SHA-256 of the token gives us a deterministic, collision-resistant
+    // document id. Dart's 32-bit `hashCode` has a meaningful birthday
+    // collision probability across a large user base; this does not.
+    final tokenId = sha256.convert(utf8.encode(token)).toString();
     await _db
         .collection('users')
         .doc(uid)
