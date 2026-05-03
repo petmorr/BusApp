@@ -7,13 +7,13 @@ full deliverables/acceptance criteria).
 |---|-----------|--------|
 | 1 | Product Finalisation and Setup | Done — repo layout, Firebase config, CI, docs (spec, setup, runbook, privacy, environments, slo, observability, runbooks, ADRs, milestones, production-readiness) |
 | 2 | Authentication and User Foundation | Done — phone-OTP login screen, role-aware router with `/admin` and `/helper` guards, FCM token registration, post-sign-in profile bootstrap, signup screen with `requestMemberLinkByNumber` callable for privacy-preserving member-link requests |
-| 3 | Member and Representation Management | Done — full data model + CSV import script + admin members list (search, create, edit, delete, status changes) + admin pending-link queue with approve/reject |
+| 3 | Member and Representation Management | Done — full data model + CSV import script + admin members list (search, create, edit, delete, status changes) + admin pending-link queue with approve/reject + per-member **Linked users** drill-down (link an active user, deactivate an existing link) |
 | 4 | Event and Route Management | Done — data model + Firestore rules + repositories + capacity recalculation triggers + admin event CRUD (details, status, capacity, cutoff), stop CRUD across the four stop types, helper assignment toggles, push reminder controls |
-| 5 | Member Attendance Flow | Done — data model + repository write path + cutoff field + attendance form with member picker, attending toggle, pickup-stop chooser, optional return drop-off, free-text notes, cutoff enforcement |
+| 5 | Member Attendance Flow | Done — data model + repository write path + cutoff field + attendance form with member picker, attending toggle, pickup-stop chooser, optional return drop-off, free-text notes, cutoff enforcement, plus admin `overrideMemberResponse` callable for off-app / late confirmations (audit-logged with `isAdminOverride` + `overriddenByAdminId`) |
 | 6 | Guest Requests and Admin Approval | Done — transaction-safe `approveGuestRequest` / `rejectGuestRequest` callables with idempotent notifications, structured failure handling, audit-on-failure + user-facing guest request form + admin pending-guest queue (collection-group query) with approve/reject |
 | 7 | Capacity, Reminders, and Notifications | Done — capacity helper, Firestore triggers, capacity alerts, attendance / pending-guest reminder callables, FCM fan-out with idempotency keys + admin reminders tab to invoke them, plus operational-update form |
 | 8 | Helper Operations and Parked-Bus Location | Done — `updateParkedBusLocation`, helper assign/unassign, operational update callables (App Check enforced, schema validated, idempotent) + helper UI: assigned-events list (collection-group query), parked-bus pin form (use-my-location + manual coordinates), operational update form |
-| 9 | Admin Attendance Board and History | Done — required indexes + denormalised history fields on `memberResponses` + per-event attendance board (capacity totals, attending grouped by stop, not-attending list, guest groupings) + cross-event history with member/event search |
+| 9 | Admin Attendance Board and History | Done — required indexes + denormalised history fields on `memberResponses` + per-event attendance board (capacity totals, attending grouped by stop, not-attending list, **still-to-confirm** list, guest groupings) + per-row admin override entry point + cross-event history with member/event search |
 | 10 | Security, Testing, and Release | Done (testing layer) — Firestore rules with role-based access + canonical link-id enforcement, **65** Firestore-rule integration tests, **50** backend unit tests, **20** end-to-end tests across the full Firebase emulator stack, **9** Flutter widget tests, App Check enforcement (with project-id allow-listed bypass for emulators), centralised payload validation, structured failure handling, PII redaction in audit log, per-uid rate limiting on user-facing lookup callables, SLOs + runbooks, Dependabot + `npm audit` gate, GitHub Actions CI running five jobs. Stage / prod project provisioning + signing secrets tracked in `docs/release.md` and `docs/production-readiness.md` |
 
 ## Test inventory
@@ -62,6 +62,11 @@ Functions emulator stack):
   self-link; unknown + inactive return the same generic response;
   idempotent replay on already-active; sticky rejection is preserved;
   every invocation writes an outcome-tagged audit log).
+- `override_member_response.test.ts` — 4 tests (admin override after
+  cutoff writes the response, sets `isAdminOverride` + denormalised
+  `memberDisplayName`, capacity trigger recalculates, audit log entry
+  written with PII redaction; non-admin rejected; unknown payload field
+  rejected; missing member returns `not-found`).
 
 Flutter app (`app/test/`):
 
@@ -74,7 +79,7 @@ Flutter app (`app/test/`):
   admin/helper menu Card → ListTile titles).
 
 **Totals: 50 backend unit tests + 65 Firestore-rule integration tests +
-20 end-to-end tests + 9 Flutter widget tests = 144 tests.**
+24 end-to-end tests + 9 Flutter widget tests = 148 tests.**
 
 ## Production readiness
 

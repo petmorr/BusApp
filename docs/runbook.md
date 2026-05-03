@@ -9,9 +9,12 @@ volunteers).
 - **Add a member**: Admin → Members → New member. Set first name, last name,
   primary phone number (E.164 format, e.g. `+447700900123`), optional notes.
 - **Edit / deactivate**: Admin → Members → select member → Edit / Deactivate.
-- **Link a user to a member**: Admin → Members → select member → Linked users
-  → Link user. A single user can be linked to multiple members (themselves
-  plus children/dependents).
+- **Link a user to a member**: Admin → Members → select member → scroll to
+  **Linked users** → **Link a user**, then pick the signed-in user
+  account. A single user can be linked to multiple members (themselves
+  plus children/dependents). Use the **Deactivate** action on an active
+  link if a phone number changes or someone stops representing the
+  member.
 
 ## Approving signup requests
 
@@ -53,8 +56,14 @@ for those members.
 
 ## Overrides and corrections
 
-- Admin override: open a member response and tap **Override**. The response
-  is flagged as admin-overridden in the audit trail.
+- Admin override: from the **Attendance board**, tap the pencil icon on
+  a member's row (or the **Override** button under "Still to confirm"
+  for a member who has not yet replied) and choose attending /
+  not-attending plus the relevant stops. The response is recorded with
+  `isAdminOverride: true` and `overriddenByAdminId: <your uid>`, and an
+  `override_member_response` entry is appended to `auditLogs/`. Override
+  works after the response cutoff has passed, which is the canonical
+  "someone confirmed outside the app" use case.
 - For a member with a changed phone number, deactivate the old user/member
   link in **Admin → Member links** and create a new one for their new
   account.

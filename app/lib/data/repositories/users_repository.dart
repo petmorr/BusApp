@@ -22,6 +22,9 @@ class UsersRepository {
   CollectionReference<Map<String, dynamic>> get _users =>
       _db.collection('users');
 
+  /// The currently signed-in user's Firebase Auth uid, or null.
+  String? get currentUid => _auth.currentUser?.uid;
+
   /// Creates the `users/{uid}` document if it does not exist yet. Idempotent
   /// — safe to call on every successful sign-in. Does not overwrite an
   /// existing profile (the Firestore rules would reject a roles override
