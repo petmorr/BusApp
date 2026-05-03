@@ -491,8 +491,16 @@ class _OverrideDialogState extends ConsumerState<_OverrideDialog> {
   void initState() {
     super.initState();
     _status = widget.initial?.status ?? MemberResponseStatus.attending;
-    _outboundStopId = widget.initial?.outboundPickupStopId;
-    _returnStopId = widget.initial?.returnDropoffStopId;
+    final outboundStopIds = widget.outboundStops.map((s) => s.id).toSet();
+    final returnStopIds = widget.returnStops.map((s) => s.id).toSet();
+    final initialOutboundStopId = widget.initial?.outboundPickupStopId;
+    final initialReturnStopId = widget.initial?.returnDropoffStopId;
+    _outboundStopId = outboundStopIds.contains(initialOutboundStopId)
+        ? initialOutboundStopId
+        : null;
+    _returnStopId = returnStopIds.contains(initialReturnStopId)
+        ? initialReturnStopId
+        : null;
     _notes = TextEditingController(text: widget.initial?.generalNotes ?? '');
   }
 
