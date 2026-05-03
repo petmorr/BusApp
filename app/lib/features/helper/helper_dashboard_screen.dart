@@ -13,7 +13,15 @@ class HelperDashboardScreen extends ConsumerWidget {
     if (roles?.isHelper != true && roles?.isAdmin != true) {
       return Scaffold(
         appBar: AppBar(title: const Text('Helper')),
-        body: const Center(child: Text('Helper access required.')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'Helper access required.',
+              style: TextStyle(fontSize: 18),
+            ),
+          ),
+        ),
       );
     }
     return Scaffold(
@@ -21,27 +29,41 @@ class HelperDashboardScreen extends ConsumerWidget {
         title: const Text('Helper'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
+          tooltip: 'Back to events',
           onPressed: () => context.go('/'),
         ),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: const [
-          // TODO(milestone-8): assigned events + parked-bus pin update.
-          ListTile(
-            leading: Icon(Icons.event_outlined),
-            title: Text('Assigned events'),
-            subtitle: Text('Coming soon'),
+        padding: const EdgeInsets.all(8),
+        children: [
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: ListTile(
+              leading: const Icon(Icons.event_available_outlined),
+              title: const Text(
+                'Assigned events',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text(
+                'Events admins have assigned you to as a helper',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.go('/helper/events'),
+            ),
           ),
-          ListTile(
-            leading: Icon(Icons.directions_bus_outlined),
-            title: Text('Set parked-bus location'),
-            subtitle: Text('Coming soon'),
-          ),
-          ListTile(
-            leading: Icon(Icons.notifications_active_outlined),
-            title: Text('Send operational update'),
-            subtitle: Text('Coming soon'),
+          const Card(
+            margin: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: ListTile(
+              leading: Icon(Icons.info_outline),
+              title: Text(
+                'How helpers work',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                'Open an assigned event to set the parked-bus pin or send '
+                'an operational update.',
+              ),
+            ),
           ),
         ],
       ),
