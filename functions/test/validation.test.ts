@@ -110,4 +110,40 @@ describe('validate', () => {
     );
     expect(out.note).toBeUndefined();
   });
+
+  it('rejects NaN for a number field', () => {
+    expect(
+      err(() =>
+        validate({ eventId: 'a', capacity: NaN, enabled: true, role: 'user' }, schema),
+      ).message,
+    ).toContain('must be a finite number');
+  });
+
+  it('rejects Infinity for a number field', () => {
+    expect(
+      err(() =>
+        validate({ eventId: 'a', capacity: Infinity, enabled: true, role: 'user' }, schema),
+      ).message,
+    ).toContain('must be a finite number');
+  });
+
+  it('accepts an optional string when explicitly provided', () => {
+    const out = validate(
+      { eventId: 'a', capacity: 1, enabled: true, role: 'user', note: 'hello' },
+      schema,
+    );
+    expect(out.note).toBe('hello');
+  });
+
+  it('rejects an optional string that exceeds maxLength', () => {
+    const tooLong = 'x'.repeat(101);
+    expect(
+      err(() =>
+        validate(
+          { eventId: 'a', capacity: 1, enabled: true, role: 'user', note: tooLong },
+          schema,
+        ),
+      ).message,
+    ).toContain('at most 100');
+  });
 });
