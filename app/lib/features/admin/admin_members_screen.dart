@@ -1,9 +1,12 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/models/member.dart';
+import '../../data/models/member_user_link.dart';
 import '../../data/repositories/members_repository.dart';
+import '../../data/repositories/users_repository.dart';
 
 class AdminMembersScreen extends ConsumerStatefulWidget {
   const AdminMembersScreen({super.key});
@@ -275,6 +278,7 @@ class _AdminMemberEditScreenState
   @override
   Widget build(BuildContext context) {
     final isCreate = widget.member == null;
+    final memberId = widget.member?.id;
     return Scaffold(
       appBar: AppBar(
         title: Text(isCreate ? 'New member' : 'Edit member'),
@@ -378,12 +382,282 @@ class _AdminMemberEditScreenState
                     )
                   : Text(isCreate ? 'Create member' : 'Save changes'),
             ),
+            if (!isCreate && memberId != null) ...[
+              const SizedBox(height: 32),
+              const Divider(),
+              _LinkedUsersSection(memberId: memberId),
+            ],
           ],
         ),
       ),
     );
   }
 }
+
+/// Shows every memberUserLink for this member, with a "Deactivate" entry
+/// for active links and a "Link a user…" picker that creates a new
+/// canonical-id link from the current admins-only `users/` directory.
+///
+/// Spec: "Allow admins to create, edit, deactivate, approve, and link
+/// member records to a user account/phone number" (Must Have).
+class _LinkedUsersSection extends ConsumerStatefulWidget {
+  const _LinkedUsersSection({required this.memberId});
+
+  final String memberId;
+
+  @override
+  ConsumerState<_LinkedUsersSection> createState() =>
+      _LinkedUsersSectionState();
+}
+
+class _LinkedUsersSectionState extends ConsumerState<_LinkedUsersSection> {
+  String? _error;
+
+  Future<void> _deactivate(String linkId) async {
+    setState(() => _error = null);
+    try {
+      final adminUid = ref.read(_currentUserUidProvider);
+      if (adminUid == null) {
+        throw StateError('No signed-in admin uid.');
+      }
+      await ref
+          .read(membersRepositoryProvider)
+          .deactivateLink(linkId, adminUid);
+    } catch (err) {
+      setState(() => _error = '$err');
+    }
+  }
+
+  Future<void> _addLink() async {
+    final picked = await showDialog<_LinkUserPick>(
+      context: context,
+      builder: (_) => const _PickUserDialog(),
+    );
+    if (picked == null) return;
+    setState(() => _error = null);
+    try {
+      final adminUid = ref.read(_currentUserUidProvider);
+      if (adminUid == null) {
+        throw StateError('No signed-in admin uid.');
+      }
+      await ref.read(membersRepositoryProvider).createAdminLink(
+            adminUserId: adminUid,
+            userId: picked.userId,
+            memberId: widget.memberId,
+            relationship: picked.relationship,
+          );
+    } on FirebaseFunctionsException catch (err) {
+      setState(() => _error = err.message ?? 'Failed.');
+    } catch (err) {
+      setState(() => _error = '$err');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final linksAsync = ref.watch(_linksForMemberProvider(widget.memberId));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Linked users',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+              ),
+            ),
+            TextButton.icon(
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text('Link a user'),
+              onPressed: _addLink,
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Users on this list can confirm attendance for this supporter. A '
+          'user can represent multiple members.',
+          style: TextStyle(fontSize: 13),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            _error!,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ],
+        const SizedBox(height: 8),
+        linksAsync.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: LinearProgressIndicator(),
+          ),
+          error: (e, _) => Text('$e'),
+          data: (links) {
+            if (links.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'No linked users yet.',
+                ),
+              );
+            }
+            return Column(
+              children: links
+                  .map(
+                    (l) => Card(
+                      child: ListTile(
+                        leading: Icon(_iconFor(l.status)),
+                        title: Text(l.userId),
+                        subtitle: Text(
+                          'status: ${l.status.name}  •  '
+                          'relationship: ${l.relationship.name}',
+                        ),
+                        trailing: l.status == LinkStatus.active
+                            ? IconButton(
+                                icon: const Icon(Icons.link_off),
+                                tooltip: 'Deactivate link',
+                                onPressed: () => _deactivate(l.id),
+                              )
+                            : null,
+                      ),
+                    ),
+                  )
+                  .toList(),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  IconData _iconFor(LinkStatus s) {
+    switch (s) {
+      case LinkStatus.active:
+        return Icons.check_circle_outline;
+      case LinkStatus.pending:
+        return Icons.hourglass_empty;
+      case LinkStatus.rejected:
+        return Icons.cancel_outlined;
+      case LinkStatus.inactive:
+        return Icons.block;
+    }
+  }
+}
+
+class _LinkUserPick {
+  const _LinkUserPick({required this.userId, required this.relationship});
+  final String userId;
+  final Relationship relationship;
+}
+
+class _PickUserDialog extends ConsumerStatefulWidget {
+  const _PickUserDialog();
+
+  @override
+  ConsumerState<_PickUserDialog> createState() => _PickUserDialogState();
+}
+
+class _PickUserDialogState extends ConsumerState<_PickUserDialog> {
+  String? _userId;
+  Relationship _relationship = Relationship.other;
+
+  @override
+  Widget build(BuildContext context) {
+    final users = ref.watch(_allUsersProvider);
+    return AlertDialog(
+      title: const Text('Link a user to this member'),
+      content: SizedBox(
+        width: 360,
+        child: users.when(
+          loading: () => const SizedBox(
+            height: 80,
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          error: (e, _) => Text('$e'),
+          data: (list) {
+            if (list.isEmpty) {
+              return const Text('No users have signed in yet.');
+            }
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: _userId,
+                  decoration: const InputDecoration(labelText: 'User'),
+                  items: list
+                      .map(
+                        (u) => DropdownMenuItem(
+                          value: u.id,
+                          child: Text(
+                            u.displayName.isEmpty
+                                ? '${u.phoneE164} (${u.id.substring(0, 6)}…)'
+                                : '${u.displayName} • ${u.phoneE164}',
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) => setState(() => _userId = v),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<Relationship>(
+                  value: _relationship,
+                  decoration: const InputDecoration(labelText: 'Relationship'),
+                  items: Relationship.values
+                      .map(
+                        (r) => DropdownMenuItem(
+                          value: r,
+                          child: Text(r.name),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) => setState(
+                    () => _relationship = v ?? Relationship.other,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _userId == null
+              ? null
+              : () => Navigator.of(context).pop(
+                    _LinkUserPick(
+                      userId: _userId!,
+                      relationship: _relationship,
+                    ),
+                  ),
+          child: const Text('Link user'),
+        ),
+      ],
+    );
+  }
+}
+
+final _linksForMemberProvider =
+    StreamProvider.family<List<MemberUserLink>, String>((ref, memberId) {
+  return ref.watch(membersRepositoryProvider).watchLinksForMember(memberId);
+});
+
+final _allUsersProvider = StreamProvider((ref) {
+  return ref.watch(usersRepositoryProvider).watchAllUsers();
+});
+
+final _currentUserUidProvider = Provider<String?>((ref) {
+  // Pulled from the cached AppUser stream rather than re-watching auth
+  // because this provider is only used inside an admin-only screen.
+  return ref.watch(usersRepositoryProvider).currentUid;
+});
 
 final _allMembersProvider = StreamProvider<List<Member>>((ref) {
   return ref.watch(membersRepositoryProvider).watchAllMembers();
