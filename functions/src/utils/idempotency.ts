@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { logger } from 'firebase-functions/v2';
 import { db, timestampNow, Timestamp } from './firestore';
 
@@ -64,7 +65,11 @@ export async function withIdempotency<T>(
 
   if (reservation.kind === 'replay') {
     if (reservation.data.status === 'completed') {
-      logger.info('idempotency: replay returned stored result', { key });
+      // Log a hashed key — raw keys embed user/event ids that we do not
+      // want in Cloud Logging indices.
+      logger.info('idempotency: replay returned stored result', {
+        keyHash: hashKey(key),
+      });
       return reservation.data.result as T;
     }
     if (reservation.data.status === 'failed') {
@@ -73,7 +78,7 @@ export async function withIdempotency<T>(
         message: 'previous attempt failed',
       };
       logger.warn('idempotency: replay returned stored error', {
-        key,
+        keyHash: hashKey(key),
         code: err.code,
       });
       throw new IdempotencyReplayError(err.code, err.message);
@@ -122,10 +127,22 @@ export class IdempotencyReplayError extends Error {
   }
 }
 
-/** Encode arbitrary input into a Firestore-safe document id. */
+/**
+ * Encode an arbitrary idempotency key into a Firestore-safe document id.
+ *
+ * Strategy: sanitise the key for readability (so an operator browsing the
+ * `idempotencyKeys` collection can still make sense of it) AND suffix the
+ * truncated key with a SHA-256 hash of the full key. Without the hash,
+ * distinct long keys that share a 1500-char prefix would collide into the
+ * same document and wrongly observe each other's stored results.
+ */
 function encodeKey(raw: string): string {
-  // Firestore document ids must not contain "/". Strip and replace anything
-  // unsafe with `-`. We deliberately keep `:` because it's allowed and helps
-  // human readability of the keys.
-  return raw.replace(/[/\s]/g, '-').slice(0, 1500);
+  const safe = raw.replace(/[/\s]/g, '-');
+  if (safe.length <= 1400) return safe;
+  const prefix = safe.slice(0, 1400);
+  return `${prefix}:${hashKey(raw)}`;
+}
+
+function hashKey(raw: string): string {
+  return createHash('sha256').update(raw).digest('hex').slice(0, 32);
 }

@@ -89,6 +89,18 @@ function isRetryable(code: HttpsError['code']): boolean {
  * appropriate error. Use as:
  *
  *     try { ... } catch (e) { await reportFailure({ actorUserId, action, ... }, e); throw e; }
+ *
+ * Audit-log persistence policy (privacy):
+ *
+ * - For `HttpsError`s we persist the `message` because it is developer-
+ *   authored and part of the callable's public contract.
+ * - For any other error (Firestore / Auth / unexpected) we persist the
+ *   classification + code but REPLACE the raw `Error.message` with
+ *   `[redacted]`. Raw messages can echo Firestore paths, Auth emails, or
+ *   identifiers picked up from wrapped causes; those do not belong in
+ *   `auditLogs` (whose PII posture is maintained separately from Cloud
+ *   Logging). The full detail is still emitted to `logger.error` so
+ *   operators can triage via Cloud Logging.
  */
 export async function reportFailure(
   ctx: {
@@ -101,6 +113,7 @@ export async function reportFailure(
   err: unknown,
 ): Promise<ClassifiedError> {
   const c = classify(err);
+  const isHttpsErr = err instanceof HttpsError;
   const redactedExtra = ctx.extra ? redactForAudit(ctx.extra) : undefined;
   logger.error('callable/trigger failed', {
     action: ctx.action,
@@ -120,7 +133,7 @@ export async function reportFailure(
     after: {
       classification: c.classification,
       code: c.httpsCode,
-      message: c.message,
+      message: isHttpsErr ? c.message : '[redacted]',
       ...(redactedExtra ?? {}),
     },
   }).catch((auditErr) => {

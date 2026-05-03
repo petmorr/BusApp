@@ -85,9 +85,12 @@ export async function sendNotificationToUsers(args: SendArgs): Promise<string> {
 
   const tokens = await loadFcmTokens(targetUserIds);
   if (tokens.length === 0) {
+    // Never log raw UIDs — that would leak which accounts were targeted
+    // for a given campaign (attendance / guest / ops). Counts are enough
+    // for the "why didn't anyone get the push?" investigation.
     logger.info('sendNotificationToUsers: no tokens for target users', {
       notificationId: notifId,
-      targetUserIds,
+      targetUserCount: targetUserIds.length,
     });
     await notificationRef.update({
       status: 'sent',
